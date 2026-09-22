@@ -1,5 +1,9 @@
 # zen — OpenCode Zen 免费模型直连工具包
 
+[English](./README.en.md) | 简体中文
+
+> 点上面的 **English** 切换到英文版；本文件即中文版。
+
 解决的问题：`https://opencode.ai/zen/v1` 的 `*-free` 模型加了「客户端指纹」校验，
 第三方客户端直连返回 403 `FreeTierError: OpenCode's free tier can only be used from within OpenCode`。
 另外 **rikkahub** 有一个源码级 bug：它对 `host == "opencode.ai"` 的请求硬塞
@@ -12,7 +16,8 @@ UUID 格式的 `x-opencode-session`，覆盖用户自定义 Header，而服务�
 | `zen_free.py` | 最小可用直连示例：`python3 zen_free.py [模型] [提示词]` |
 | `zen_relay.py` | 本地反代（核心）。注入合规头/体、剥离脏 session、透传 SSE；**非流式客户端自动把 SSE 聚合成 JSON**（服务端只收 `stream:true`，但 App 部分场景期望纯 JSON）。`python3 zen_relay.py [端口]` 默认 8787 |
 | `zen_check.py` | 自检（合并了原 9 个一次性探测脚本）：`python3 zen_check.py [basic\|ablate\|host\|relay]` |
-| `README.md` | 本说明 |
+| `README.md` | 中文说明（当前页面） |
+| `README.en.md` | English readme（顶部链接可切换） |
 | `CHANGELOG.md` | 改动记录（基线前部分为依实测补写） |
 
 ## rikkahub 配置（推荐：走 relay）
@@ -59,3 +64,7 @@ manifest `usesCleartextTraffic="true"`，App 允许 http。
   走 relay 的话以后只需改 `zen_relay.py` 一处。
 - 长期方案：给 rikkahub 提 PR —— `configureSessionHeaders()` 里 `header()` 改为
   「用户已设同名头则不覆盖」，或 session 值格式化为 `ses_...`。
+
+## 仓库
+
+https://github.com/Fly143/OpenCode-Zen-free-api
