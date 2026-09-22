@@ -12,9 +12,8 @@ UUID 格式的 `x-opencode-session`，覆盖用户自定义 Header，而服务�
 | `zen_free.py` | 最小可用直连示例：`python3 zen_free.py [模型] [提示词]` |
 | `zen_relay.py` | 本地反代（核心）。注入合规头/体、剥离脏 session、透传 SSE；**非流式客户端自动把 SSE 聚合成 JSON**（服务端只收 `stream:true`，但 App 部分场景期望纯 JSON）。`python3 zen_relay.py [端口]` 默认 8787 |
 | `zen_check.py` | 自检（合并了原 9 个一次性探测脚本）：`python3 zen_check.py [basic\|ablate\|host\|relay]` |
-| `rikkahub-fix-session.patch` | rikkahub 源码补丁（根治用）：不覆盖用户自定义 session 头 + UUID 格式化为 `ses_` |
 | `README.md` | 本说明 |
-| `relay.log` | relay 运行日志（自动追加） |
+| `CHANGELOG.md` | 改动记录（基线前部分为依实测补写） |
 
 ## rikkahub 配置（推荐：走 relay）
 
@@ -60,19 +59,3 @@ manifest `usesCleartextTraffic="true"`，App 允许 http。
   走 relay 的话以后只需改 `zen_relay.py` 一处。
 - 长期方案：给 rikkahub 提 PR —— `configureSessionHeaders()` 里 `header()` 改为
   「用户已设同名头则不覆盖」，或 session 值格式化为 `ses_...`。
-
-## 根治：rkkahub 补丁（可选）
-
-`rikkahub-fix-session.patch` 改的就是那个 bug：`header()` 覆盖用户自定义
-`x-opencode-session` + UUID 格式不合法。已验证格式化结果
-（UUID → `ses_6b5ab89e2c1d406d837a3d12` + 2位，共 26 位）能过服务端正则。
-
-应用与构建（无需本地 Android 环境）：
-```bash
-git clone https://github.com/rikkahub/rikkahub && cd rikkahub
-git apply rikkahub-fix-session.patch
-git push到自己的 fork → GitHub Actions 的 daily-build 会跑 gradlew assembleRelease 出包
-```
-打好的包仍需配置自定义 Header `x-opencode-session`（或不配，patch 会自动生成合法值）、
-UA `opencode/1.18.13`、Body `tools` 四件套——即「基本/高级设置」按上文填即可，不再被覆盖。
-上游合并后可直接提 issue 引用本 patch。
