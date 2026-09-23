@@ -119,9 +119,11 @@ def check_ablate():
     expect403 = {"无 x-opencode-session", "session=UUID(rikkahub格式)",
                  "UA=python", "stream=false", "无 tools", "tools只有3个(缺grep)"}
     for tag, h, b in cases:
-        st, raw = post(BASE + "/chat/completions", h, b)
+        st, raw = post(BASE + "/chat/completions", b, h)
         if tag in expect403:
             line(st == 403, tag + " (应403)", st)
+        elif tag == "UA=opencode/1.17":
+            line(st == 426, tag + " (应426 旧版被拒)", st)
         else:
             line(is_ok(st, raw), tag + " (应200)", st,
                  "" if st == 200 else raw[:70])
