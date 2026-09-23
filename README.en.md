@@ -21,7 +21,7 @@ headers/body fields, so any OpenAI-compatible client just points at it.
 
 | File | Purpose |
 |---|---|
-| `zen_relay.py` | Core local reverse proxy. Injects compliant headers/body, strips dirty sessions, relays SSE; **automatically aggregates SSE into JSON for non-streaming clients** (the server only accepts `stream:true`, but some client paths expect plain JSON). `python3 zen_relay.py [port]`, default 8787 |
+| `zen_relay.py` | Core local reverse proxy. Injects compliant headers/body, strips dirty sessions, relays SSE; **automatically aggregates SSE into JSON for non-streaming clients** (the server only accepts `stream:true`, but some client paths expect plain JSON). `python3 zen_relay.py [port] [--sticky] [--rotate=N]`, port defaults to 8787; see session modes below |
 | `zen_free.py` | Minimal direct-call example: `python3 zen_free.py [model] [prompt]` |
 | `zen_check.py` | Self-test (merges 9 one-off probe scripts): `python3 zen_check.py [basic\|ablate\|host\|relay]` |
 | `README.md` | Chinese readme (switch via link at top) |
@@ -49,6 +49,30 @@ headers/body fields, so any OpenAI-compatible client just points at it.
 Why this works: rikkahub's hard-coded override only triggers for
 `host == "opencode.ai"`; pointing at `127.0.0.1` bypasses it, and the app's
 manifest declares `usesCleartextTraffic="true"` so plain http is allowed.
+
+### Session modes (how `x-opencode-session` is generated)
+
+| How to start | Behaviour |
+|---|---|
+| `python3 zen_relay.py 8787` | **Per-request random** (default). Every request gets a fresh `ses_` |
+| `python3 zen_relay.py 8787 --sticky` | One random session at startup, **reused for the whole process**; restarts pick a new one |
+| `python3 zen_relay.py 8787 --rotate=600` | Implies `--sticky`, and rotates to a new session every 600 s (good for long-running daemons) |
+| `ZEN_SESSION_MODE=sticky python3 zen_relay.py 8787` | Same as `--sticky` (env-var form) |
+
+For a long-running instance, `--rotate=1800` (half an hour) is a sensible value.
+`x-opencode-request` is unaffected — it stays unique per request in all modes.
+
+Debug endpoint (**local only**, never forwarded upstream):
+```bash
+curl http://127.0.0.1:8787/__session
+# {"mode":"sticky","session":"ses_...","rotate_seconds":600,"rotations":0,
+#  "session_age_seconds":12.3,"uptime_seconds":12.3}
+```
+In sticky mode the session in use is also printed to stdout at startup.
+
+**Trade-off**: `--sticky` makes the traffic look like one coherent session to
+the upstream; the risk is that if that session ever gets flagged/rate-limited,
+the whole process is affected — add `--rotate` or just restart.
 
 ## Checksum of required conditions (measured 2026-09-22, re-verify with `zen_check.py ablate`)
 

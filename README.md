@@ -14,7 +14,7 @@ UUID 格式的 `x-opencode-session`，覆盖用户自定义 Header，而服务�
 | 文件 | 用途 |
 |---|---|
 | `zen_free.py` | 最小可用直连示例：`python3 zen_free.py [模型] [提示词]` |
-| `zen_relay.py` | 本地反代（核心）。注入合规头/体、剥离脏 session、透传 SSE；**非流式客户端自动把 SSE 聚合成 JSON**（服务端只收 `stream:true`，但 App 部分场景期望纯 JSON）。`python3 zen_relay.py [端口]` 默认 8787 |
+| `zen_relay.py` | 本地反代（核心）。注入合规头/体、剥离脏 session、透传 SSE；**非流式客户端自动把 SSE 聚合成 JSON**（服务端只收 `stream:true`，但 App 部分场景期望纯 JSON）。`python3 zen_relay.py [端口] [--sticky] [--rotate=N]`，端口默认 8787；session 模式见下 |
 | `zen_check.py` | 自检（合并了原 9 个一次性探测脚本）：`python3 zen_check.py [basic\|ablate\|host\|relay]` |
 | `README.md` | 中文说明（当前页面） |
 | `README.en.md` | English readme（顶部链接可切换） |
@@ -40,6 +40,29 @@ UUID 格式的 `x-opencode-session`，覆盖用户自定义 Header，而服务�
 
 原理：硬编码只认 `host == "opencode.ai"`，指向 `127.0.0.1` 即绕开；
 manifest `usesCleartextTraffic="true"`，App 允许 http。
+
+### session 模式（`x-opencode-session` 怎么生成）
+
+| 启动方式 | 行为 |
+|---|---|
+| `python3 zen_relay.py 8787` | **每请求随机**（默认）。每个请求都是全新的 `ses_`，最不容易被单会话维度累计 |
+| `python3 zen_relay.py 8787 --sticky` | 启动时随机生成一个，**整个进程复用**；重启即换新 |
+| `python3 zen_relay.py 8787 --rotate=600` | 隐含 `--sticky`，且每 600 秒自动换新（适合长时间常驻） |
+| `ZEN_SESSION_MODE=sticky python3 zen_relay.py 8787` | 同 `--sticky`（环境变量写法） |
+
+`--rotate=N` 的取值建议：常驻跑就用 `--rotate=1800`（半小时）级别。
+注释掉的 `x-opencode-request` 不受影响，始终每请求唯一。
+
+调试端点（**不转发上游**，纯本地）：
+```bash
+curl http://127.0.0.1:8787/__session
+# {"mode":"sticky","session":"ses_...","rotate_seconds":600,"rotations":0,
+#  "session_age_seconds":12.3,"uptime_seconds":12.3}
+```
+sticky 模式启动时也会把当次的 session 打到 stdout，方便直接对照。
+
+**权衡**：`--sticky` 的好处是上游视角下像一个连贯会话；风险是万一该 session 被
+标记/限流，整个进程都受影响 —— 那就加 `--rotate` 或直接重启。
 
 ## 校验条件（2026-09-22 实测，`zen_check.py ablate` 可复验）
 

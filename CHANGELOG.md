@@ -35,6 +35,32 @@
 - **`README.md`**：校验条件表、relay 配置、失败绕过记录、补丁 fork + Actions 出包步骤；
   relay 启动说明改为「用户在自己常驻环境启动」。
 
+## 2026-09-23
+
+### 复查（无代码改动，确认服务端未收紧）
+- 全套指纹直连 200、裸请求 403、relay 端到端 200；`ablate` 10 组结果与 09-22 完全一致。
+- 免费模型列表仍是 10 个（`/models` 里 endswith `-free` 的 9 个 + 无后缀的 `big-pickle`）。
+- 并发 12 路全 200，未见 429 或任何限流响应头（30 路压测被用户中途取消）。
+
+### 修复
+- **`zen_check.py`**：`check_ablate()` 里 `post()` 参数顺序颠倒
+  （`post(url, h, b)` → `post(url, b, h)`），此前 11 组消融全部
+  以 `TypeError: expected string or bytes-like object, got 'list'` 报错。
+  `UA=opencode/1.17` 的预期值同时从「应 200」修正为「应 426」。commit `53dd657`。
+
+### 新增
+- **`zen_relay.py` session 模式**（用户需求：启动时随机重置 session）：
+  - 默认仍是**每请求随机**（原行为，未改动）。
+  - `--sticky` / `-s` / `ZEN_SESSION_MODE=sticky`：启动时随机生成一个 `ses_`，进程内复用。
+  - `--rotate=N`：隐含 `--sticky`，每 N 秒自动换新，并往 stderr 打轮换日志。
+  - 新增本地调试端点 `GET /__session`（**不转发上游**），返回当前模式/session/年龄/轮换次数；
+    sticky 启动时也会把当次 session 打到 stdout。
+  - 实测（假上游抓真实发出的 `x-opencode-session`）：默认 3 请求→3 个不同、
+    sticky 3 请求→1 个相同、`--rotate=2` 中间隔 2.5s→2 个不同且 `rotations=1`，
+    全部符合 `^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`；sticky 下真实上游端到端仍 200。
+- `README.md` / `README.en.md` 增加「session 模式」小节（模式表、`--rotate` 建议值、
+  调试端点、sticky 的权衡说明）。
+
 ## 2026-09-22 基线后
 - `73d88fb` git 仓库初始化，基线提交（6 文件，`*.log` 入 .gitignore）。
 - 本 CHANGELOG 补写。

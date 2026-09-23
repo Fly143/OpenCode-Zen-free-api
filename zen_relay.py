@@ -1,17 +1,54 @@
 #!/usr/bin/env python3
 """zen_relay.py — 本地反代，给 OpenCode Zen 免费模型注入通过校验所需的头/体。
-用法: python3 zen_relay.py [端口]        默认 8787
+用法:
+  python3 zen_relay.py [端口]               默认 8787；session 每请求随机（原行为）
+  python3 zen_relay.py [端口] --sticky      启动时随机生成一个 session，整个进程复用
+  python3 zen_relay.py [端口] --rotate=600  隐含 --sticky，每 600 秒自动换新 session
+  ZEN_SESSION_MODE=sticky python3 zen_relay.py   同上（环境变量写法）
+  调试: curl http://127.0.0.1:8787/__session     查看当前 session 状态
 rikkahub 里 Base URL 填: http://127.0.0.1:8787/zen/v1
 原理: rikkahub 只对 host==opencode.ai 硬塞 UUID session；指向 127.0.0.1 即绕开，
       本中转统一补上 UA / ses_ session / tools / stream=true，并透传 SSE。
 """
-import json, sys, uuid, threading, http.server, socketserver, urllib.request, urllib.error
+import json, os, sys, time, uuid, threading, http.server, socketserver, urllib.request, urllib.error
 
 UPSTREAM = "https://opencode.ai"
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8787
+
+PORT, STICKY, ROTATE = 8787, False, 0
+for _a in sys.argv[1:]:
+    if _a.isdigit():
+        PORT = int(_a)
+    elif _a in ("--sticky", "-s"):
+        STICKY = True
+    elif _a.startswith("--rotate="):
+        ROTATE = int(_a.split("=", 1)[1])
+    elif _a in ("-h", "--help"):
+        print(__doc__)
+        sys.exit(0)
+if os.environ.get("ZEN_SESSION_MODE") == "sticky":
+    STICKY = True
+if ROTATE > 0:
+    STICKY = True                              # 轮换只在 sticky 下才有意义
 
 def new_session():
     return "ses_" + uuid.uuid4().hex[:12] + uuid.uuid4().hex[:14]
+
+# session 状态。STICKY=False → 每请求随机（不进这里）；STICKY=True → 进程内复用。
+_slock = threading.Lock()
+_state = {"session": new_session(), "born": time.time(), "rotations": 0}
+START = time.time()                            # 进程启动时刻（/__session 里的 uptime）
+
+def current_session() -> str:
+    """返回本次请求要用的 x-opencode-session。"""
+    if not STICKY:
+        return new_session()                   # 原行为：每个请求都是全新的 ses_
+    with _slock:
+        if ROTATE and time.time() - _state["born"] >= ROTATE:
+            _state.update(session=new_session(), born=time.time(),
+                          rotations=_state["rotations"] + 1)
+            sys.stderr.write("[relay] session 轮换 #%d: %s\n"
+                             % (_state["rotations"], _state["session"]))
+        return _state["session"]
 
 def new_request_id():
     return "msg_" + uuid.uuid4().hex[:12] + uuid.uuid4().hex[:14].upper()
@@ -85,7 +122,30 @@ class Relay(http.server.BaseHTTPRequestHandler):
         sys.stderr.write("[relay] " + fmt % args + "\n")
 
     def do_GET(self):
+        if self.path.startswith("/__session"):
+            return self._session_info()
         self._forward(None)
+
+    def _session_info(self):
+        """内部调试端点，不转发上游。"""
+        with _slock:
+            if STICKY:
+                p = {"mode": "sticky", "session": _state["session"],
+                     "rotate_seconds": ROTATE or None,
+                     "rotations": _state["rotations"],
+                     "session_age_seconds": round(time.time() - _state["born"], 1)}
+            else:
+                p = {"mode": "per-request", "session": None,
+                     "note": "每个请求都会生成新的 ses_ session"}
+            p["uptime_seconds"] = round(time.time() - START, 1)
+        body = json.dumps(p, ensure_ascii=False, indent=2).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+        self.close_connection = True
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -122,7 +182,7 @@ class Relay(http.server.BaseHTTPRequestHandler):
             "Authorization": "Bearer public",
             "Accept": self.headers.get("Accept", "*/*"),
             "Content-Type": "application/json",
-            "x-opencode-session": new_session(),
+            "x-opencode-session": current_session(),
             "x-opencode-request": new_request_id(),
             "x-opencode-client": "cli",
             "x-opencode-project": "global",
@@ -180,4 +240,10 @@ class Server(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     print(f"zen-relay 监听 http://127.0.0.1:{PORT}/zen/v1  ->  {UPSTREAM}/zen/v1")
+    if STICKY:
+        print(f"  session: 启动固定（sticky）  本次 = {_state['session']}")
+        if ROTATE:
+            print(f"  自动轮换: 每 {ROTATE} 秒换一个新 session")
+    else:
+        print("  session: 每请求随机（每次调用都换新的 ses_）")
     Server(("127.0.0.1", PORT), Relay).serve_forever()
