@@ -72,6 +72,8 @@
   把其 HTTP API 翻译成 OpenAI 兼容端点（默认 `:8790`）。
   rikkahub 只需把 Base URL 指到 `http://127.0.0.1:8790/v1`。
   实测通过：`GET /v1/models`、非流式与流式的 `/v1/chat/completions` 均 200。
+- **`start.sh` / `start.bat`**：一键启动脚本（Linux/macOS/Termux/WSL、Windows）。
+  自动查找/安装 opencode 二进制并启动桥上；`--bg` 可后台常驻。
 - **`FINDINGS-2026-10-15.md`**：本次复检的完整记录（分层判定、逐字节重放、
   TLS ClientHello 比对、官方客户端抓包、可行方案验证）。
 - `_probe/` 入 `.gitignore`（复检脚本与 opencode 二进制，不入库）。

@@ -38,7 +38,18 @@ opencode serve (:4097, real client binary)
 opencode.ai Zen gateway  ✅
 ```
 
-### Usage
+### Quick start (one-click scripts)
+
+```bash
+# Linux / macOS / Termux / WSL
+./start.sh                    # auto-find/install opencode, run in foreground
+./start.sh --bg               # run in background (log: oc_bridge.log)
+./start.sh --port 9000 --mode stateful
+```
+
+On Windows, just double-click `start.bat` (same auto-find/install behaviour).
+
+### Usage (manual)
 
 ```bash
 # A real opencode binary is required where you run it:
@@ -91,6 +102,7 @@ Measured in-sandbox (same egress IP where every Python/Node/Bun replay got 403):
 | File | Purpose |
 |---|---|
 | `oc_bridge.py` | **Recommended.** Wraps the real opencode client as an OpenAI-compatible endpoint (`:8790`) |
+| `start.sh` / `start.bat` | One-click launchers (Linux/macOS/Termux/WSL, Windows): auto-find/install opencode and start the bridge |
 | `zen_free.py` | Minimal direct-call example (**dead**, kept for reference) |
 | `zen_relay.py` | Local reverse proxy that injected headers/body (**dead**, kept as an archive; its SSE→JSON aggregation still works for any OpenAI-compatible upstream) |
 | `zen_check.py` | Self-test / ablation script (**dead**, reflects the 2026-09 conditions) |

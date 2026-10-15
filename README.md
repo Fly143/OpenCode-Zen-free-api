@@ -34,7 +34,18 @@ opencode serve (:4097，真实客户端二进制)
 opencode.ai Zen 网关  ✅
 ```
 
-### 用法
+### 用法（一键启动）
+
+```bash
+# Linux / macOS / Termux / WSL
+./start.sh                    # 自动找/装 opencode，前台启动
+./start.sh --bg               # 后台常驻（日志 oc_bridge.log）
+./start.sh --port 9000 --mode stateful
+```
+
+双击 `start.bat` 即可在 Windows 上启动（同样自动找/装 opencode）。
+
+### 用法（手动）
 
 ```bash
 # 运行处需有真实的 opencode 二进制：
@@ -85,6 +96,7 @@ rikkahub 走本地 http 即可（App manifest `usesCleartextTraffic="true"`）�
 | 文件 | 用途 |
 |---|---|
 | `oc_bridge.py` | **推荐**。把真实 opencode 客户端封装成 OpenAI 兼容端点（`:8790`） |
+| `start.sh` / `start.bat` | 一键启动脚本（Linux/macOS/Termux/WSL、Windows）：自动找/装 opencode 并启动桥上 |
 | `zen_free.py` | 最小直连示例（**已失效**，留作参考）：`python3 zen_free.py [模型] [提示词]` |
 | `zen_relay.py` | 本地反代，注入合规头/体（**已失效**，留档；换任意 OpenAI 兼容上游仍可复用其 SSE→JSON 聚合骨架） |
 | `zen_check.py` | 自检/消融脚本（**已失效**，反映 2026-09 的旧校验条件） |
