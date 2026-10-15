@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "//": "把本文件内容合并进 ~/.config/opencode/opencode.json（Windows: %USERPROFILE%\\.config\\opencode\\opencode.json），",
+  "//2": "然后用 `oc_bridge.py --agent bridge` 启动，即可用下面这个精简 agent 顶掉 opencode 默认注入的 ~9.5KB 系统提示。",
+
+  "agent": {
+    "bridge": {
+      "mode": "primary",
+      "prompt": "You are a helpful assistant.",
+      "//": "prompt 必须是『非空』才会替换默认系统提示；空字符串会回退到 opencode 默认(约 9.5KB)。",
+      "//2": "实测：默认 system ≈ 9565 字符；设了本字段后 ≈ 1065 字符（还含 opencode 追加的少量环境信息）。"
+    }
+  }
+}

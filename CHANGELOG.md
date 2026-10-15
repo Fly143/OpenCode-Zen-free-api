@@ -83,3 +83,15 @@
 ### 文档
 - `README.md` / `README.en.md` 重写：以 `oc_bridge.py` 为推荐方案，
   `zen_relay.py` 等旧工具标注为已失效并保留留档。
+
+## 2026-10-15（后续）
+
+### 仓库整理
+- 主分支移除失效的旧方法（`zen_relay.py` / `zen_free.py` / `zen_check.py`），
+  移至分支 **`legacy-header-spoof`** 留档；`main` 只保留当前可用方案。
+
+### 新增
+- **`opencode.json.example`** + `oc_bridge.py --agent`：用配置里的自定义 agent
+  的 `prompt` 字段**替换**（非追加）opencode 默认注入的系统提示。
+  实测系统提示 9565 → 1065 字符，且仍能正常出字。空 prompt 会回退默认。
+- `oc_bridge.py` 新增 `--agent NAME` 选项。

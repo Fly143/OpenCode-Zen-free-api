@@ -18,6 +18,10 @@ On the same machine, from the same egress IP, only the **official client process
 itself** gets a 200. So this repo's old path — `zen_relay.py` injecting a few
 headers — **no longer works**. Do not rely on it.
 
+> The old "spoofed headers" trio (`zen_relay.py` / `zen_free.py` / `zen_check.py`)
+> has been moved to branch **`legacy-header-spoof`**; `main` keeps only the
+> currently-working approach.
+
 ## Recommended: `oc_bridge.py` (don't imitate it — use the real client)
 
 The gate blocks the client, not the request, so let the official client make the
@@ -53,6 +57,25 @@ On Windows, just double-click `start.bat` (same auto-find/install behaviour).
 > (PATH, the npm global dir, common locations) and **install only when it is
 > truly missing** (usually just the first time). Once found, the absolute path is
 > passed straight to the bridge, so it never depends on PATH.
+
+### Optional: strip the injected system prompt with a minimal agent
+
+Because it uses the real client, opencode attaches its own **agent system prompt
+(~9.5 KB, measured)** plus tool definitions (~23 KB) to every request. The system
+prompt can be **replaced** (not appended) via config:
+
+Merge the contents of `opencode.json.example` into
+`~/.config/opencode/opencode.json` and start with `--agent bridge`:
+
+```bash
+./start.sh --agent bridge        # or: python3 oc_bridge.py --agent bridge
+```
+
+Measured: the injected system prompt drops from **9565 → 1065 characters**, and
+completions still work. (Note: `prompt` must be a **non-empty** string to
+replace the default; an empty string falls back to opencode's default prompt.
+The ~23 KB of tool definitions cannot be removed via config — both the gate and
+the client behaviour rely on them.)
 
 ### Usage (manual)
 
@@ -108,12 +131,14 @@ Measured in-sandbox (same egress IP where every Python/Node/Bun replay got 403):
 |---|---|
 | `oc_bridge.py` | **Recommended.** Wraps the real opencode client as an OpenAI-compatible endpoint (`:8790`) |
 | `start.sh` / `start.bat` | One-click launchers (Linux/macOS/Termux/WSL, Windows): auto-find/install opencode and start the bridge |
-| `zen_free.py` | Minimal direct-call example (**dead**, kept for reference) |
-| `zen_relay.py` | Local reverse proxy that injected headers/body (**dead**, kept as an archive; its SSE→JSON aggregation still works for any OpenAI-compatible upstream) |
-| `zen_check.py` | Self-test / ablation script (**dead**, reflects the 2026-09 conditions) |
+| `opencode.json.example` | Optional config sample: a minimal `bridge` agent (use with `--agent bridge`, see above) |
 | `FINDINGS-2026-10-15.md` | Full 2026-10-15 re-check (evidence, captures, conclusion, `oc_bridge` validation) |
 | `README.md` / `README.en.md` | Chinese / English readme |
 | `CHANGELOG.md` | Change log |
+
+> The old "spoofed headers" tools (`zen_relay.py` / `zen_free.py` / `zen_check.py`)
+> live on branch **`legacy-header-spoof`**:
+> `git checkout legacy-header-spoof`, or `git show legacy-header-spoof:zen_relay.py`.
 
 ## History (dead)
 

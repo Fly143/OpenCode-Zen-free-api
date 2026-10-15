@@ -15,6 +15,9 @@
 同一台机器、同一个出口 IP 上，只有**官方客户端进程本身**能拿到 200。
 所以本仓库的旧路线 —— `zen_relay.py` 注入几个请求头 —— **已不再有效**，请勿再依赖。
 
+> 旧的"伪造头"三件套（`zen_relay.py` / `zen_free.py` / `zen_check.py`）已移到
+> 分支 **`legacy-header-spoof`** 留档，主分支只保留当前可用的方案。
+
 ## 推荐方案：`oc_bridge.py`（不模仿，直接用真客户端）
 
 思路：既然拦的是客户端本身，就**让官方客户端自己去发请求**。
@@ -47,6 +50,23 @@ opencode.ai Zen 网关  ✅
 
 > 启动脚本是**幂等**的：按绝对路径在 `PATH` / npm 全局目录 / 常见位置找 `opencode`，
 > **只有真找不到才安装**（一般只在首次装一次），找到就把绝对路径直接传给桥上，不再依赖 `PATH`。
+
+### 可选：用精简 agent 去掉注入的系统提示
+
+走真客户端时，opencode 会在每次请求里附带它自己的 **agent 系统提示（实测约 9.5KB）**
+和工具定义（约 23KB）。系统提示可以用配置**替换掉**（不是追加）：
+
+复制 `opencode.json.example` 里的内容，合并进
+`~/.config/opencode/opencode.json`（Windows：`%USERPROFILE%\.config\opencode\opencode.json`），
+即以 `--agent bridge` 启动：
+
+```bash
+./start.sh --agent bridge        # 或 python3 oc_bridge.py --agent bridge
+```
+
+实测效果：注入的系统提示从 **9565 字符降到 1065 字符**，且仍能正常出字。
+（注意：`prompt` 必须是**非空**字符串才会替换，空字符串会回退到 opencode 默认提示。
+工具定义那 23KB 无法通过配置去掉——闸门与客户端行为都依赖它，属固有开销。）
 
 ### 用法（手动）
 
@@ -100,12 +120,14 @@ rikkahub 走本地 http 即可（App manifest `usesCleartextTraffic="true"`）�
 |---|---|
 | `oc_bridge.py` | **推荐**。把真实 opencode 客户端封装成 OpenAI 兼容端点（`:8790`） |
 | `start.sh` / `start.bat` | 一键启动脚本（Linux/macOS/Termux/WSL、Windows）：自动找/装 opencode 并启动桥上 |
-| `zen_free.py` | 最小直连示例（**已失效**，留作参考）：`python3 zen_free.py [模型] [提示词]` |
-| `zen_relay.py` | 本地反代，注入合规头/体（**已失效**，留档；换任意 OpenAI 兼容上游仍可复用其 SSE→JSON 聚合骨架） |
-| `zen_check.py` | 自检/消融脚本（**已失效**，反映 2026-09 的旧校验条件） |
+| `opencode.json.example` | 可选配置示例：定义一个精简 `bridge` agent（配上 `--agent bridge` 使用，见上） |
 | `FINDINGS-2026-10-15.md` | 2026-10-15 复检全记录（证据、抓包、结论、`oc_bridge` 方案验证） |
 | `README.md` / `README.en.md` | 中文 / 英文说明 |
 | `CHANGELOG.md` | 改动记录 |
+
+> 旧的"伪造头"方案（`zen_relay.py` / `zen_free.py` / `zen_check.py`）已移至
+> 分支 **`legacy-header-spoof`**：
+> `git checkout legacy-header-spoof`，或 `git show legacy-header-spoof:zen_relay.py`。
 
 ## 历史（已失效）
 

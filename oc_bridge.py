@@ -21,7 +21,7 @@ oc_bridge.py —— 把「真实 opencode 客户端」变成 OpenAI 兼容端点
   # 1) 确保已装 opencode（真实二进制）。本机可用 npm 包：
   #    npm i -g opencode-ai   →  或指定 --opencode-bin /path/to/opencode
   python3 oc_bridge.py [--port 8790] [--oc-port 4097] [--opencode-bin PATH]
-                       [--free-models a,b,c] [--mode stateless|stateful]
+                       [--free-models a,b,c] [--mode stateless|stateful] [--agent NAME]
   # 2) rikkahub 提供商:
   #    Base URL = http://127.0.0.1:8790/v1     API Key = 随便
   #    模型 ID  = mimo-v2.6-flash-free
@@ -124,6 +124,10 @@ def ask(model, prompt, key):
                 _sessions[key] = sid
     body = {"model": {"providerID": "opencode", "modelID": model},
             "parts": [{"type": "text", "text": prompt}]}
+    if ARGS.agent:
+        # 用配置里定义的自定义 agent（可在 opencode.json 里用 prompt 覆盖掉
+        # opencode 默认注入的 ~9.5KB 系统提示，见 opencode.json.example）。
+        body["agent"] = ARGS.agent
     d = oc("POST", f"/session/{sid}/message", body)
     parts = d.get("parts") or d.get("info", {}).get("parts") or []
     return "".join(p.get("text", "") for p in parts if p.get("type") == "text").strip()
@@ -224,6 +228,9 @@ def main():
     ap.add_argument("--home", default=None, help="opencode 的 HOME（配置/凭据目录）")
     ap.add_argument("--free-models", default=",".join(DEFAULT_FREE))
     ap.add_argument("--mode", choices=["stateless", "stateful"], default="stateless")
+    ap.add_argument("--agent", default=None,
+                    help="使用 opencode.json 中定义的自定义 agent（可大幅缩小注入的系统提示，"
+                         "见 opencode.json.example；不填则用 opencode 默认 build agent）")
     ARGS = ap.parse_args()
     ARGS.free_models = [m.strip() for m in ARGS.free_models.split(",") if m.strip()]
     signal.signal(signal.SIGTERM, flush_children)
