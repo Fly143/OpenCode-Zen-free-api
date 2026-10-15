@@ -80,6 +80,11 @@ and sends `agent=bridge`. No manual config needed.
 > remove them. (`opencode.json.example` is kept for those who prefer to manage
 > the agent by hand.)
 
+**Used as a backend for other coding agents** (dsh, mimo code, …): their own
+`system` messages are **forwarded verbatim** (via opencode's `system` field,
+not squashed into the user text), so their system prompts still apply.
+Verified: a downstream "output JSON only" instruction produced pure JSON.
+
 ### Usage (manual)
 
 ```bash

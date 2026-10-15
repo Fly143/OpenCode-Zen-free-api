@@ -71,6 +71,10 @@ opencode.ai Zen 网关  ✅
 > 闸门与客户端行为都依赖它，配置去不掉。
 > （`opencode.json.example` 仍保留，供想手动管理 agent 的人参考。）
 
+**给其它 coding agent 当后端时**：下游客户端（dsh、mimo code 等）自带的
+`system` 消息会被**原样透传**（走 opencode 的 `system` 字段，不会塞进 user 文本），
+所以它们自己的系统提示照常生效。实测：下游要求"只输出 JSON"，返回即为纯 JSON。
+
 ### 用法（手动）
 
 ```bash

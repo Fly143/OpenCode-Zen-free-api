@@ -121,20 +121,38 @@ def flush_children(*_):
 
 
 # ---------- OpenAI <-> opencode 转换 ----------
-def flatten_messages(messages):
-    """把 OpenAI messages 数组压成一段文本（stateless 模式用）。"""
-    roles = {"system": "System", "user": "User", "assistant": "Assistant", "tool": "Tool"}
-    out = []
+def _text_of(content):
+    if isinstance(content, list):  # 多模态/分段
+        return "".join(p.get("text", "") for p in content
+                       if isinstance(p, dict) and p.get("type") in ("text", "input_text"))
+    if isinstance(content, str):
+        return content
+    return "" if content is None else str(content)
+
+
+def split_messages(messages):
+    """拆成 (system_text, prompt_text)。
+
+    下游 agent（dsh / mimo code 等）自带的 system 提示**原样**走 opencode 的
+    `system` 字段，不被塞进 user 文本里；其余消息按角色拼成一段文本
+    （stateless 无历史，必须整段重发）。
+    """
+    systems, lines = [], []
+    label = {"assistant": "Assistant", "tool": "Tool"}
     for m in messages or []:
-        role = roles.get(m.get("role"), m.get("role") or "User")
-        c = m.get("content")
-        if isinstance(c, list):  # 多模态/分段
-            c = "".join(p.get("text", "") for p in c if isinstance(p, dict) and p.get("type") in ("text", "input_text")) or ""
-        out.append(f"{role}: {c}" if m.get("role") != "user" else str(c))
-    return "\n\n".join(out)
+        text = _text_of(m.get("content"))
+        role = m.get("role")
+        if role == "system":
+            if text:
+                systems.append(text)
+        elif role == "user":
+            lines.append(text)
+        else:
+            lines.append(f"{label.get(role, role or 'User')}: {text}")
+    return "\n\n".join(systems), "\n\n".join(lines)
 
 
-def ask(model, prompt, key):
+def ask(model, prompt, key, system=None):
     """返回助手文本。stateless=每请求新会话；stateful=按 key 复用会话。"""
     with _lock:
         sid = _sessions.get(key) if ARGS.mode == "stateful" else None
@@ -143,10 +161,12 @@ def ask(model, prompt, key):
             if ARGS.mode == "stateful":
                 _sessions[key] = sid
     body = {"model": {"providerID": "opencode", "modelID": model},
-            "parts": [{"type": "text", "text": prompt}]}
+            "parts": [{"type": "text", "text": prompt or "."}]}
+    if system:
+        # 下游客户端自己的系统提示，原样透传（opencode 会追加在 agent prompt 之后）
+        body["system"] = system
     if ARGS.agent:
-        # 用配置里定义的自定义 agent（可在 opencode.json 里用 prompt 覆盖掉
-        # opencode 默认注入的 ~9.5KB 系统提示，见 opencode.json.example）。
+        # 用注入的精简 agent（默认）顶掉 opencode 默认的 ~9.5KB 系统提示。
         body["agent"] = ARGS.agent
     d = oc("POST", f"/session/{sid}/message", body)
     parts = d.get("parts") or d.get("info", {}).get("parts") or []
@@ -203,10 +223,10 @@ class Handler(BaseHTTPRequestHandler):
         if model not in ARGS.free_models:
             return self._json(404, {"error": {"message": f"model {model!r} not in allowlist",
                                               "type": "ModelError"}})
-        prompt = flatten_messages(req.get("messages"))
+        system_text, prompt = split_messages(req.get("messages"))
         key = self.headers.get("X-Conversation-Id") or self.headers.get("X-Session-Id") or "default"
         try:
-            text = ask(model, prompt, key)
+            text = ask(model, prompt, key, system_text or None)
         except urllib.error.HTTPError as e:
             body = e.read(400).decode(errors="replace")
             return self._json(e.code, {"error": {"message": body, "type": "UpstreamError"}})
