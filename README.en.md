@@ -112,7 +112,7 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 | `oc_bridge.py` | Core. Wraps the real opencode client as an OpenAI-compatible endpoint (`:8790`) |
 | `start.sh` / `start.bat` | One-click launchers (Linux/macOS/Termux/WSL, Windows) |
 | `opencode.json.example` | Optional config sample (for managing the `bridge` agent by hand) |
-| `FINDINGS-2026-10-15.md` | Evidence: how it works, captures, measurements |
+| `FINDINGS-2026-10-15.md` | Design rationale + measurements (Chinese) |
 | `CHANGELOG.md` | Change log |
 
 ## Related

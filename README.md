@@ -104,7 +104,7 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 | `oc_bridge.py` | 核心。把真实 opencode 客户端封装成 OpenAI 兼容端点（`:8790`） |
 | `start.sh` / `start.bat` | 一键启动脚本（Linux/macOS/Termux/WSL、Windows） |
 | `opencode.json.example` | 可选配置示例（想手动管理 `bridge` agent 时参考） |
-| `FINDINGS-2026-10-15.md` | 原理、抓包与实测记录 |
+| `FINDINGS-2026-10-15.md` | 设计原理与实测记录 |
 | `CHANGELOG.md` | 改动记录 |
 
 ## 相关
