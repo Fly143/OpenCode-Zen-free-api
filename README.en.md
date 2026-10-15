@@ -49,6 +49,11 @@ opencode.ai Zen gateway  ✅
 
 On Windows, just double-click `start.bat` (same auto-find/install behaviour).
 
+> The launchers are **idempotent**: they resolve `opencode` by absolute path
+> (PATH, the npm global dir, common locations) and **install only when it is
+> truly missing** (usually just the first time). Once found, the absolute path is
+> passed straight to the bridge, so it never depends on PATH.
+
 ### Usage (manual)
 
 ```bash

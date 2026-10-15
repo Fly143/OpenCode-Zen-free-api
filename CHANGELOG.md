@@ -74,6 +74,8 @@
   实测通过：`GET /v1/models`、非流式与流式的 `/v1/chat/completions` 均 200。
 - **`start.sh` / `start.bat`**：一键启动脚本（Linux/macOS/Termux/WSL、Windows）。
   自动查找/安装 opencode 二进制并启动桥上；`--bg` 可后台常驻。
+  幂等：按绝对路径在 PATH / npm 全局目录 / 常见位置查找，找不到才安装，
+  找到则把绝对路径传给桥上（避免"npm 装在 PATH 之外 → 每次启动又重装"的坑）。
 - **`FINDINGS-2026-10-15.md`**：本次复检的完整记录（分层判定、逐字节重放、
   TLS ClientHello 比对、官方客户端抓包、可行方案验证）。
 - `_probe/` 入 `.gitignore`（复检脚本与 opencode 二进制，不入库）。
