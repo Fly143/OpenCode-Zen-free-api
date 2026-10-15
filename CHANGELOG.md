@@ -95,3 +95,7 @@
   的 `prompt` 字段**替换**（非追加）opencode 默认注入的系统提示。
   实测系统提示 9565 → 1065 字符，且仍能正常出字。空 prompt 会回退默认。
 - `oc_bridge.py` 新增 `--agent NAME` 选项。
+- **精简系统提示改为默认**：`oc_bridge.py` 通过 `OPENCODE_CONFIG_CONTENT` 环境变量
+  注入 `bridge` agent（与用户已有 `opencode.json` 合并，不改其文件），默认
+  `agent=bridge`，把注入的系统提示从 9565 → ~1080 字符。新增 `--prompt TEXT`
+  自定义提示文本、`--full-prompt` 恢复完整提示。实测默认打真实上游正常出字。

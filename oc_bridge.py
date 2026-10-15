@@ -21,7 +21,9 @@ oc_bridge.py —— 把「真实 opencode 客户端」变成 OpenAI 兼容端点
   # 1) 确保已装 opencode（真实二进制）。本机可用 npm 包：
   #    npm i -g opencode-ai   →  或指定 --opencode-bin /path/to/opencode
   python3 oc_bridge.py [--port 8790] [--oc-port 4097] [--opencode-bin PATH]
-                       [--free-models a,b,c] [--mode stateless|stateful] [--agent NAME]
+                       [--free-models a,b,c] [--mode stateless|stateful]
+                       [--agent NAME] [--prompt TEXT] [--full-prompt]
+  # 默认用精简系统提示（~1KB）；--full-prompt 恢复 opencode 默认的完整提示（~9.5KB）
   # 2) rikkahub 提供商:
   #    Base URL = http://127.0.0.1:8790/v1     API Key = 随便
   #    模型 ID  = mimo-v2.6-flash-free
@@ -33,6 +35,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 DEFAULT_FREE = ["mimo-v2.6-flash-free", "step-5-preview-free", "deepseek-v4.1-flash-free",
                 "nemotron-3.5-lightning-free", "jev-1.13-free", "longcat-2.5-preview-free",
                 "space-bunny-free", "big-pickle"]
+
+# 默认用这个自定义 agent 顶掉 opencode 注入的 ~9.5KB 系统提示（实测降到 ~1KB）。
+# 通过环境变量 OPENCODE_CONFIG_CONTENT 注入，与用户自己的 opencode.json 合并，不改动其文件。
+DEFAULT_AGENT = "bridge"
+MINIMAL_PROMPT = "You are a helpful assistant."
 
 ARGS = None
 OC_BASE = None
@@ -77,6 +84,19 @@ def start_server():
     env = dict(os.environ)
     if ARGS.home:
         env["HOME"] = ARGS.home
+    # 用环境变量注入一个精简 agent（与用户已有 opencode.json 合并，不改其文件）：
+    # agent.<名>.prompt 为「非空」时会「替换」opencode 默认注入的 ~9.5KB 系统提示。
+    if ARGS.agent and ARGS.agent != "build":
+        try:
+            base = json.loads(env.get("OPENCODE_CONFIG_CONTENT") or "{}")
+            if not isinstance(base, dict):
+                base = {}
+        except Exception:
+            base = {}
+        agents = base.setdefault("agent", {})
+        if ARGS.agent not in agents:
+            agents[ARGS.agent] = {"mode": "primary", "prompt": ARGS.prompt}
+        env["OPENCODE_CONFIG_CONTENT"] = json.dumps(base, ensure_ascii=False)
     _proc = subprocess.Popen([binary, "serve", "--port", str(ARGS.oc_port), "--hostname", "127.0.0.1"],
                              env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
@@ -228,11 +248,17 @@ def main():
     ap.add_argument("--home", default=None, help="opencode 的 HOME（配置/凭据目录）")
     ap.add_argument("--free-models", default=",".join(DEFAULT_FREE))
     ap.add_argument("--mode", choices=["stateless", "stateful"], default="stateless")
-    ap.add_argument("--agent", default=None,
-                    help="使用 opencode.json 中定义的自定义 agent（可大幅缩小注入的系统提示，"
-                         "见 opencode.json.example；不填则用 opencode 默认 build agent）")
+    ap.add_argument("--agent", default=DEFAULT_AGENT,
+                    help=f"要使用的 opencode agent 名（默认 {DEFAULT_AGENT}：桥自动注入的精简 agent，"
+                         "可把注入的系统提示从 ~9.5KB 降到 ~1KB；填 build 则用 opencode 默认完整提示）")
+    ap.add_argument("--prompt", default=MINIMAL_PROMPT,
+                    help=f"--agent 为 {DEFAULT_AGENT} 时使用的系统提示文本（默认 {MINIMAL_PROMPT!r}）")
+    ap.add_argument("--full-prompt", action="store_true",
+                    help="用 opencode 默认的完整系统提示（等价于 --agent build）")
     ARGS = ap.parse_args()
     ARGS.free_models = [m.strip() for m in ARGS.free_models.split(",") if m.strip()]
+    if ARGS.full_prompt:
+        ARGS.agent = "build"
     signal.signal(signal.SIGTERM, flush_children)
     signal.signal(signal.SIGINT, flush_children)
     start_server()

@@ -51,22 +51,25 @@ opencode.ai Zen 网关  ✅
 > 启动脚本是**幂等**的：按绝对路径在 `PATH` / npm 全局目录 / 常见位置找 `opencode`，
 > **只有真找不到才安装**（一般只在首次装一次），找到就把绝对路径直接传给桥上，不再依赖 `PATH`。
 
-### 可选：用精简 agent 去掉注入的系统提示
+### 系统提示：默认已精简
 
-走真客户端时，opencode 会在每次请求里附带它自己的 **agent 系统提示（实测约 9.5KB）**
-和工具定义（约 23KB）。系统提示可以用配置**替换掉**（不是追加）：
+走真客户端时，opencode 会在每次请求里附带它自己的 agent 系统提示。
+**本工具默认已把它替换成精简提示**（`You are a helpful assistant.`），
+实测从 **9565 字符降到约 1080 字符**，且照常出字。
 
-复制 `opencode.json.example` 里的内容，合并进
-`~/.config/opencode/opencode.json`（Windows：`%USERPROFILE%\.config\opencode\opencode.json`），
-即以 `--agent bridge` 启动：
+实现方式：`oc_bridge.py` 通过环境变量 `OPENCODE_CONFIG_CONTENT` 注入一个
+`bridge` agent（与你自己已有的 `opencode.json` **合并**，不改动你的文件），
+并用 `agent=bridge` 发送——不需要你手动配置。
 
-```bash
-./start.sh --agent bridge        # 或 python3 oc_bridge.py --agent bridge
-```
+| 想要的效果 | 启动方式 |
+|---|---|
+| **默认**：精简系统提示（≈1KB） | `./start.sh`（什么都不用加） |
+| 自定义精简提示文本 | `./start.sh --prompt "You are a terse assistant."` |
+| 恢复 opencode 默认完整提示（≈9.5KB） | `./start.sh --full-prompt` |
 
-实测效果：注入的系统提示从 **9565 字符降到 1065 字符**，且仍能正常出字。
-（注意：`prompt` 必须是**非空**字符串才会替换，空字符串会回退到 opencode 默认提示。
-工具定义那 23KB 无法通过配置去掉——闸门与客户端行为都依赖它，属固有开销。）
+> 仍会随请求发送 opencode 的工具定义（约 23KB）——这是**固有开销**：
+> 闸门与客户端行为都依赖它，配置去不掉。
+> （`opencode.json.example` 仍保留，供想手动管理 agent 的人参考。）
 
 ### 用法（手动）
 
@@ -81,6 +84,9 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 #   --home DIR            指定 opencode 的 HOME（配置/凭据目录）
 #   --mode stateless|stateful   默认 stateless（每请求新会话）；stateful 按会话复用
 #   --free-models a,b,c   覆盖允许的模型 id 列表
+#   --prompt TEXT         精简系统提示的文本（默认 "You are a helpful assistant."）
+#   --full-prompt         用 opencode 默认的完整系统提示（≈9.5KB）
+#   --agent NAME          指定 opencode agent（默认 bridge，即自动注入的精简 agent）
 ```
 
 客户端（rikkahub）提供商设置：

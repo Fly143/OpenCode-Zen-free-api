@@ -58,24 +58,27 @@ On Windows, just double-click `start.bat` (same auto-find/install behaviour).
 > truly missing** (usually just the first time). Once found, the absolute path is
 > passed straight to the bridge, so it never depends on PATH.
 
-### Optional: strip the injected system prompt with a minimal agent
+### System prompt: minimal by default
 
-Because it uses the real client, opencode attaches its own **agent system prompt
-(~9.5 KB, measured)** plus tool definitions (~23 KB) to every request. The system
-prompt can be **replaced** (not appended) via config:
+Because it uses the real client, opencode attaches its own agent system prompt
+to every request. **This tool already replaces it with a minimal one by default**
+(`You are a helpful assistant.`); measured to drop from **9565 → ~1080
+characters**, and completions still work.
 
-Merge the contents of `opencode.json.example` into
-`~/.config/opencode/opencode.json` and start with `--agent bridge`:
+How: `oc_bridge.py` injects a `bridge` agent via the `OPENCODE_CONFIG_CONTENT`
+env var (**merged** with your own `opencode.json` — your file is not modified)
+and sends `agent=bridge`. No manual config needed.
 
-```bash
-./start.sh --agent bridge        # or: python3 oc_bridge.py --agent bridge
-```
+| Goal | How to start |
+|---|---|
+| **Default**: minimal system prompt (≈1 KB) | `./start.sh` (nothing extra) |
+| Custom minimal prompt text | `./start.sh --prompt "You are a terse assistant."` |
+| Restore opencode's default prompt (≈9.5 KB) | `./start.sh --full-prompt` |
 
-Measured: the injected system prompt drops from **9565 → 1065 characters**, and
-completions still work. (Note: `prompt` must be a **non-empty** string to
-replace the default; an empty string falls back to opencode's default prompt.
-The ~23 KB of tool definitions cannot be removed via config — both the gate and
-the client behaviour rely on them.)
+> opencode's tool definitions (~23 KB) are still sent — that is an **inherent
+> cost**: both the gate and the client behaviour rely on them and config cannot
+> remove them. (`opencode.json.example` is kept for those who prefer to manage
+> the agent by hand.)
 
 ### Usage (manual)
 
