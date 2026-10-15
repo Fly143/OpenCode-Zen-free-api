@@ -1,99 +1,44 @@
-# zen — OpenCode Zen 免费模型工具包
+# zen — 把 OpenCode Zen 免费模型变成 OpenAI 兼容端点
 
 [English](./README.en.md) | 简体中文
 
-## 2026-10-15 重要更新：旧的「伪造头」路线已失效
+`oc_bridge.py` 用**官方 opencode 客户端**（`opencode serve`）当传输层，
+把它包成一个 OpenAI 兼容端点——任何客户端（rikkahub、dsh、mimo code……）
+填个 Base URL 就能用 Zen 的 `*-free` 模型。
 
-`https://opencode.ai/zen/v1` 的 `*-free` 模型现在会对**请求内容之外的客户端特征**做校验。
-经实测（详见 [`FINDINGS-2026-10-15.md`](./FINDINGS-2026-10-15.md)），
-把官方客户端的真实请求**逐字节重放**（头、体、头顺序，甚至 TLS ClientHello 都对齐）**依然 403**：
-
-```
-403 FreeTierError: OpenCode's free tier can only be used from within OpenCode
-```
-
-同一台机器、同一个出口 IP 上，只有**官方客户端进程本身**能拿到 200。
-所以本仓库的旧路线 —— `zen_relay.py` 注入几个请求头 —— **已不再有效**，请勿再依赖。
-
-> 旧的"伪造头"三件套（`zen_relay.py` / `zen_free.py` / `zen_check.py`）已移到
-> 分支 **`legacy-header-spoof`** 留档，主分支只保留当前可用的方案。
-
-## 推荐方案：`oc_bridge.py`（不模仿，直接用真客户端）
-
-思路：既然拦的是客户端本身，就**让官方客户端自己去发请求**。
-opencode 自带无头服务器 `opencode serve`，它跑在真实客户端进程里，能过闸。
-`oc_bridge.py` 就是把它的 HTTP API 翻译成 OpenAI 兼容端点的桥：
+> Zen 免费额度会对客户端本身做校验，第三方直连返回
+> `403 FreeTierError: OpenCode's free tier can only be used from within OpenCode`。
+> 本工具**不模仿**客户端，而是起一个真实的 opencode 进程去发请求，所以能过闸。
+> 原理、抓包与实测见 [`FINDINGS-2026-10-15.md`](./FINDINGS-2026-10-15.md)。
 
 ```
-rikkahub / 任意 OpenAI 客户端
+你的客户端（rikkahub / dsh / mimo code / …）
       │  POST /v1/chat/completions
       ▼
 oc_bridge.py (:8790)                       ← 本仓库，零依赖
       │  POST /session ，POST /session/{id}/message
       ▼
-opencode serve (:4097，真实客户端二进制)
+opencode serve (:4097，官方客户端二进制)
       │  POST /inference/v1/chat/completions
       ▼
 opencode.ai Zen 网关  ✅
 ```
 
-### 用法（一键启动）
+## 快速开始
 
 ```bash
-# Linux / macOS / Termux / WSL
+# 一键启动（Linux / macOS / Termux / WSL）
 ./start.sh                    # 自动找/装 opencode，前台启动
 ./start.sh --bg               # 后台常驻（日志 oc_bridge.log）
-./start.sh --port 9000 --mode stateful
+./start.sh --port 9000        # 换端口
 ```
 
-双击 `start.bat` 即可在 Windows 上启动（同样自动找/装 opencode）。
+Windows 上双击 `start.bat` 即可。
 
-> 启动脚本是**幂等**的：按绝对路径在 `PATH` / npm 全局目录 / 常见位置找 `opencode`，
-> **只有真找不到才安装**（一般只在首次装一次），找到就把绝对路径直接传给桥上，不再依赖 `PATH`。
+> 启动脚本**幂等**：按绝对路径在 `PATH` / npm 全局目录 / 常见位置找 `opencode`，
+> 只有真找不到才安装（一般只在首次装一次），找到就直接用，不依赖 `PATH`。
 
-### 系统提示：默认已精简
-
-走真客户端时，opencode 会在每次请求里附带它自己的 agent 系统提示。
-**本工具默认已把它替换成精简提示**（`You are a helpful assistant.`），
-实测从 **9565 字符降到约 1080 字符**，且照常出字。
-
-实现方式：`oc_bridge.py` 通过环境变量 `OPENCODE_CONFIG_CONTENT` 注入一个
-`bridge` agent（与你自己已有的 `opencode.json` **合并**，不改动你的文件），
-并用 `agent=bridge` 发送——不需要你手动配置。
-
-| 想要的效果 | 启动方式 |
-|---|---|
-| **默认**：精简系统提示（≈1KB） | `./start.sh`（什么都不用加） |
-| 自定义精简提示文本 | `./start.sh --prompt "You are a terse assistant."` |
-| 恢复 opencode 默认完整提示（≈9.5KB） | `./start.sh --full-prompt` |
-
-> 仍会随请求发送 opencode 的工具定义（约 23KB）——这是**固有开销**：
-> 闸门与客户端行为都依赖它，配置去不掉。
-> （`opencode.json.example` 仍保留，供想手动管理 agent 的人参考。）
-
-**给其它 coding agent 当后端时**：下游客户端（dsh、mimo code 等）自带的
-`system` 消息会被**原样透传**（走 opencode 的 `system` 字段，不会塞进 user 文本），
-所以它们自己的系统提示照常生效。实测：下游要求"只输出 JSON"，返回即为纯 JSON。
-
-### 用法（手动）
-
-```bash
-# 运行处需有真实的 opencode 二进制：
-npm i -g opencode-ai          # 或 brew / pacman / docker，见 opencode 官方文档
-# 手机可用 Termux 装 node 后同样 npm i -g opencode-ai
-
-python3 oc_bridge.py --port 8790 --oc-port 4097
-# 常用参数：
-#   --opencode-bin PATH   指定 opencode 二进制路径（默认从 PATH 找）
-#   --home DIR            指定 opencode 的 HOME（配置/凭据目录）
-#   --mode stateless|stateful   默认 stateless（每请求新会话）；stateful 按会话复用
-#   --free-models a,b,c   覆盖允许的模型 id 列表
-#   --prompt TEXT         精简系统提示的文本（默认 "You are a helpful assistant."）
-#   --full-prompt         用 opencode 默认的完整系统提示（≈9.5KB）
-#   --agent NAME          指定 opencode agent（默认 bridge，即自动注入的精简 agent）
-```
-
-客户端（rikkahub）提供商设置：
+客户端设置：
 
 | 项 | 值 |
 |---|---|
@@ -102,12 +47,39 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 | 模型 ID | `mimo-v2.6-flash-free` |
 | 自定义 Headers/Body | 不用填 |
 
+## 系统提示
+
+opencode 默认会附带自己的一大段 agent 系统提示，**本工具默认已替换成精简版**：
+
+| 想要的效果 | 启动方式 |
+|---|---|
+| **默认**：精简系统提示（≈1KB） | `./start.sh` |
+| 自定义精简提示文本 | `./start.sh --prompt "You are a terse assistant."` |
+| 恢复 opencode 默认完整提示（≈9.5KB） | `./start.sh --full-prompt` |
+
+（实现方式：`oc_bridge.py` 用环境变量 `OPENCODE_CONFIG_CONTENT` 注入一个精简
+`bridge` agent，与你自己已有的 `opencode.json` **合并**，不改动你的文件。）
+
+**当其它 coding agent 的后端时**：下游客户端自带的 `system` 消息会**原样透传**
+（走 opencode 的 `system` 字段，不会塞进 user 文本），它们自己的系统提示照常生效。
+实测：下游要求"只输出 JSON"，返回即为纯 JSON。
+
+## 手动启动 / 参数
+
+```bash
+python3 oc_bridge.py --port 8790 --oc-port 4097
+#   --opencode-bin PATH   指定 opencode 二进制路径（默认从 PATH 找）
+#   --home DIR            指定 opencode 的 HOME（配置/凭据目录）
+#   --mode stateless|stateful   默认 stateless（每请求新会话）；stateful 按会话复用
+#   --free-models a,b,c   覆盖允许的模型 id 列表
+#   --prompt TEXT         精简系统提示文本（默认 "You are a helpful assistant."）
+#   --full-prompt         用 opencode 默认的完整系统提示
+#   --agent NAME          指定 opencode agent（默认 bridge，即自动注入的精简 agent）
+```
+
 `oc_bridge.py` 会自己拉起（或复用已在跑的）`opencode serve`。
-rikkahub 走本地 http 即可（App manifest `usesCleartextTraffic="true"`）。
 
-### 已验证
-
-沙箱实测（同一出口 IP，所有 Python/Node/Bun 重放都 403 的地方）：
+## 已验证
 
 | 测试 | 结果 |
 |---|---|
@@ -116,11 +88,12 @@ rikkahub 走本地 http 即可（App manifest `usesCleartextTraffic="true"`）�
 | `POST /v1/chat/completions`（`stream:true`） | ✅ 标准 SSE 分片 + `[DONE]` |
 | `step-5-preview-free` 等其它免费模型 | ✅ 200 |
 
-### 注意
+## 注意
 
-- 需要在运行处装 opencode 二进制（比纯 Python relay 重）。
-- 请求会带上 opencode 自己的 system prompt / 工具定义，上下文比裸调用大。
-- 免费额度现按**地区**切分：香港出口下 `cat-jam-free`、`muse-spark-1.2/1.3` 返回
+- 运行处需要 opencode 二进制（手机可用 Termux 装 node 后 `npm i -g opencode-ai`）。
+- 请求仍会带上 opencode 的工具定义（约 23KB）——这是**固有开销**，闸门与客户端行为
+  都依赖它，配置去不掉。
+- 免费额度按**地区**切分：香港出口下 `cat-jam-free`、`muse-spark-1.2/1.3` 返回
   `403 RegionError`。
 - 这是"用本尊"而非"伪装"，仍属灰色用法；量大可能被服务端针对，要紧场景建议走付费 key。
 
@@ -128,25 +101,14 @@ rikkahub 走本地 http 即可（App manifest `usesCleartextTraffic="true"`）�
 
 | 文件 | 用途 |
 |---|---|
-| `oc_bridge.py` | **推荐**。把真实 opencode 客户端封装成 OpenAI 兼容端点（`:8790`） |
-| `start.sh` / `start.bat` | 一键启动脚本（Linux/macOS/Termux/WSL、Windows）：自动找/装 opencode 并启动桥上 |
-| `opencode.json.example` | 可选配置示例：定义一个精简 `bridge` agent（配上 `--agent bridge` 使用，见上） |
-| `FINDINGS-2026-10-15.md` | 2026-10-15 复检全记录（证据、抓包、结论、`oc_bridge` 方案验证） |
-| `README.md` / `README.en.md` | 中文 / 英文说明 |
+| `oc_bridge.py` | 核心。把真实 opencode 客户端封装成 OpenAI 兼容端点（`:8790`） |
+| `start.sh` / `start.bat` | 一键启动脚本（Linux/macOS/Termux/WSL、Windows） |
+| `opencode.json.example` | 可选配置示例（想手动管理 `bridge` agent 时参考） |
+| `FINDINGS-2026-10-15.md` | 原理、抓包与实测记录 |
 | `CHANGELOG.md` | 改动记录 |
 
-> 旧的"伪造头"方案（`zen_relay.py` / `zen_free.py` / `zen_check.py`）已移至
-> 分支 **`legacy-header-spoof`**：
-> `git checkout legacy-header-spoof`，或 `git show legacy-header-spoof:zen_relay.py`。
+## 相关
 
-## 历史（已失效）
-
-2026-09 时，Zen 免费端点靠一组可复现的请求头/体条件放行
-（`ses_` 会话格式、`UA: opencode/≥1.18`、`stream:true`、`tools` 含核心工具名），
-`zen_relay.py` 即据此注入头并透传，一度可用。
-2026-09-17 起服务端逐步收紧，至 2026-10-15 已升级为内容级校验，静态头彻底失效。
-细节与逐字节重放的证据见 [`FINDINGS-2026-10-15.md`](./FINDINGS-2026-10-15.md)。
-
-## 仓库
-
-https://github.com/Fly143/OpenCode-Zen-free-api
+- 早期"伪造请求头"方案（已失效）留档在分支 **`legacy-header-spoof`**：
+  `git checkout legacy-header-spoof`。
+- 仓库：https://github.com/Fly143/OpenCode-Zen-free-api
