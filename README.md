@@ -1,92 +1,104 @@
-# zen — OpenCode Zen 免费模型直连工具包
+# zen — OpenCode Zen 免费模型工具包
 
 [English](./README.en.md) | 简体中文
 
-> 点上面的 **English** 切换到英文版；本文件即中文版。
+## 2026-10-15 重要更新：旧的「伪造头」路线已失效
 
-解决的问题：`https://opencode.ai/zen/v1` 的 `*-free` 模型加了「客户端指纹」校验，
-第三方客户端直连返回 403 `FreeTierError: OpenCode's free tier can only be used from within OpenCode`。
-另外 **rikkahub** 有一个源码级 bug：它对 `host == "opencode.ai"` 的请求硬塞
-UUID 格式的 `x-opencode-session`，覆盖用户自定义 Header，而服务端只认 `ses_` 格式 → 必 403。
+`https://opencode.ai/zen/v1` 的 `*-free` 模型现在会对**请求内容之外的客户端特征**做校验。
+经实测（详见 [`FINDINGS-2026-10-15.md`](./FINDINGS-2026-10-15.md)），
+把官方客户端的真实请求**逐字节重放**（头、体、头顺序，甚至 TLS ClientHello 都对齐）**依然 403**：
+
+```
+403 FreeTierError: OpenCode's free tier can only be used from within OpenCode
+```
+
+同一台机器、同一个出口 IP 上，只有**官方客户端进程本身**能拿到 200。
+所以本仓库的旧路线 —— `zen_relay.py` 注入几个请求头 —— **已不再有效**，请勿再依赖。
+
+## 推荐方案：`oc_bridge.py`（不模仿，直接用真客户端）
+
+思路：既然拦的是客户端本身，就**让官方客户端自己去发请求**。
+opencode 自带无头服务器 `opencode serve`，它跑在真实客户端进程里，能过闸。
+`oc_bridge.py` 就是把它的 HTTP API 翻译成 OpenAI 兼容端点的桥：
+
+```
+rikkahub / 任意 OpenAI 客户端
+      │  POST /v1/chat/completions
+      ▼
+oc_bridge.py (:8790)                       ← 本仓库，零依赖
+      │  POST /session ，POST /session/{id}/message
+      ▼
+opencode serve (:4097，真实客户端二进制)
+      │  POST /inference/v1/chat/completions
+      ▼
+opencode.ai Zen 网关  ✅
+```
+
+### 用法
+
+```bash
+# 运行处需有真实的 opencode 二进制：
+npm i -g opencode-ai          # 或 brew / pacman / docker，见 opencode 官方文档
+# 手机可用 Termux 装 node 后同样 npm i -g opencode-ai
+
+python3 oc_bridge.py --port 8790 --oc-port 4097
+# 常用参数：
+#   --opencode-bin PATH   指定 opencode 二进制路径（默认从 PATH 找）
+#   --home DIR            指定 opencode 的 HOME（配置/凭据目录）
+#   --mode stateless|stateful   默认 stateless（每请求新会话）；stateful 按会话复用
+#   --free-models a,b,c   覆盖允许的模型 id 列表
+```
+
+客户端（rikkahub）提供商设置：
+
+| 项 | 值 |
+|---|---|
+| Base URL | `http://127.0.0.1:8790/v1` |
+| API Key | 随便填（不校验） |
+| 模型 ID | `mimo-v2.6-flash-free` |
+| 自定义 Headers/Body | 不用填 |
+
+`oc_bridge.py` 会自己拉起（或复用已在跑的）`opencode serve`。
+rikkahub 走本地 http 即可（App manifest `usesCleartextTraffic="true"`）。
+
+### 已验证
+
+沙箱实测（同一出口 IP，所有 Python/Node/Bun 重放都 403 的地方）：
+
+| 测试 | 结果 |
+|---|---|
+| `GET /v1/models` | ✅ 200 |
+| `POST /v1/chat/completions`（非流式） | ✅ 200，正常出字 |
+| `POST /v1/chat/completions`（`stream:true`） | ✅ 标准 SSE 分片 + `[DONE]` |
+| `step-5-preview-free` 等其它免费模型 | ✅ 200 |
+
+### 注意
+
+- 需要在运行处装 opencode 二进制（比纯 Python relay 重）。
+- 请求会带上 opencode 自己的 system prompt / 工具定义，上下文比裸调用大。
+- 免费额度现按**地区**切分：香港出口下 `cat-jam-free`、`muse-spark-1.2/1.3` 返回
+  `403 RegionError`。
+- 这是"用本尊"而非"伪装"，仍属灰色用法；量大可能被服务端针对，要紧场景建议走付费 key。
 
 ## 文件
 
 | 文件 | 用途 |
 |---|---|
-| `zen_free.py` | 最小可用直连示例：`python3 zen_free.py [模型] [提示词]` |
-| `zen_relay.py` | 本地反代（核心）。注入合规头/体、剥离脏 session、透传 SSE；**非流式客户端自动把 SSE 聚合成 JSON**（服务端只收 `stream:true`，但 App 部分场景期望纯 JSON）。`python3 zen_relay.py [端口] [--sticky] [--rotate=N]`，端口默认 8787；session 模式见下 |
-| `zen_check.py` | 自检（合并了原 9 个一次性探测脚本）：`python3 zen_check.py [basic\|ablate\|host\|relay]` |
-| `README.md` | 中文说明（当前页面） |
-| `README.en.md` | English readme（顶部链接可切换） |
-| `CHANGELOG.md` | 改动记录（基线前部分为依实测补写） |
+| `oc_bridge.py` | **推荐**。把真实 opencode 客户端封装成 OpenAI 兼容端点（`:8790`） |
+| `zen_free.py` | 最小直连示例（**已失效**，留作参考）：`python3 zen_free.py [模型] [提示词]` |
+| `zen_relay.py` | 本地反代，注入合规头/体（**已失效**，留档；换任意 OpenAI 兼容上游仍可复用其 SSE→JSON 聚合骨架） |
+| `zen_check.py` | 自检/消融脚本（**已失效**，反映 2026-09 的旧校验条件） |
+| `FINDINGS-2026-10-15.md` | 2026-10-15 复检全记录（证据、抓包、结论、`oc_bridge` 方案验证） |
+| `README.md` / `README.en.md` | 中文 / 英文说明 |
+| `CHANGELOG.md` | 改动记录 |
 
-## rikkahub 配置（推荐：走 relay）
+## 历史（已失效）
 
-1. 启动 relay —— **在你自己控制的环境里跑**（本软件的常驻终端/会话都行；
-   对话里的执行环境每次调用结束会清空进程树，放那里必死）：
-   ```bash
-   python3 /workspace/zen/zen_relay.py 8787
-   ```
-   需常驻可用 `nohup python3 -u zen_relay.py 8787 >> relay.log 2>&1 &`。
-   任何有 python3 的设备都行（同手机 Termux、电脑、NAS、云主机），只要 rikkahub 能访问到那个 `IP:端口`。
-2. rikkahub 提供商设置：
-
-| 项 | 值 |
-|---|---|
-| Base URL | `http://127.0.0.1:8787/zen/v1` |
-| API Key | `public`（服务端不校验） |
-| 模型 ID | `mimo-v2.6-flash-free` |
-| 自定义 Headers/Body | 不用填，relay 统一注入 |
-
-原理：硬编码只认 `host == "opencode.ai"`，指向 `127.0.0.1` 即绕开；
-manifest `usesCleartextTraffic="true"`，App 允许 http。
-
-### session 模式（`x-opencode-session` 怎么生成）
-
-| 启动方式 | 行为 |
-|---|---|
-| `python3 zen_relay.py 8787` | **每请求随机**（默认）。每个请求都是全新的 `ses_`，最不容易被单会话维度累计 |
-| `python3 zen_relay.py 8787 --sticky` | 启动时随机生成一个，**整个进程复用**；重启即换新 |
-| `python3 zen_relay.py 8787 --rotate=600` | 隐含 `--sticky`，且每 600 秒自动换新（适合长时间常驻） |
-| `ZEN_SESSION_MODE=sticky python3 zen_relay.py 8787` | 同 `--sticky`（环境变量写法） |
-
-`--rotate=N` 的取值建议：常驻跑就用 `--rotate=1800`（半小时）级别。
-注释掉的 `x-opencode-request` 不受影响，始终每请求唯一。
-
-调试端点（**不转发上游**，纯本地）：
-```bash
-curl http://127.0.0.1:8787/__session
-# {"mode":"sticky","session":"ses_...","rotate_seconds":600,"rotations":0,
-#  "session_age_seconds":12.3,"uptime_seconds":12.3}
-```
-sticky 模式启动时也会把当次的 session 打到 stdout，方便直接对照。
-
-**权衡**：`--sticky` 的好处是上游视角下像一个连贯会话；风险是万一该 session 被
-标记/限流，整个进程都受影响 —— 那就加 `--rotate` 或直接重启。
-
-## 校验条件（2026-09-22 实测，`zen_check.py ablate` 可复验）
-
-| 条件 | 不满足时 |
-|---|---|
-| `x-opencode-session` = `ses_` + 12位hex + 14位字母数字 | 403 |
-| `User-Agent` = `opencode/1.18+`（大小写不限） | 403；1.17 → 426 |
-| body `stream: true` | 403 |
-| body `tools` 含 bash/glob/grep/read 四件套（缺一即拒） | 403 |
-| `Authorization` | 可省略 |
-| `x-opencode-request/client/project` | 非必需 |
-
-## 已验证走不通的路（别重复踩）
-
-- `www/api/app.opencode.ai` 等子域 → 404/HTML 假 200
-- 尾点域名 `opencode.ai.` → 服务端认，但证书不匹配；rikkahub 无「信任所有证书」开关
-- 大小写变体重复 session 头 / 逗号拼接 → 服务端 403
-
-## 已知风险
-
-- 官方在持续收紧检测（linux.do 反馈 2026-09 中旬起多次变更），纯静态头随时可能失效；
-  走 relay 的话以后只需改 `zen_relay.py` 一处。
-- 长期方案：给 rikkahub 提 PR —— `configureSessionHeaders()` 里 `header()` 改为
-  「用户已设同名头则不覆盖」，或 session 值格式化为 `ses_...`。
+2026-09 时，Zen 免费端点靠一组可复现的请求头/体条件放行
+（`ses_` 会话格式、`UA: opencode/≥1.18`、`stream:true`、`tools` 含核心工具名），
+`zen_relay.py` 即据此注入头并透传，一度可用。
+2026-09-17 起服务端逐步收紧，至 2026-10-15 已升级为内容级校验，静态头彻底失效。
+细节与逐字节重放的证据见 [`FINDINGS-2026-10-15.md`](./FINDINGS-2026-10-15.md)。
 
 ## 仓库
 

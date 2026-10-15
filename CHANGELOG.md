@@ -8,9 +8,6 @@
 ### 探测与确认
 - 确认 Zen 免费端点 4 项放行条件（ses_ session / UA≥1.18 / stream:true / tools 四件套），
   消融实验共 10 组；裸请求 403 `FreeTierError` 复现。
-- 读 rikkahub 源码定位根因：`Request.kt configureSessionHeaders()` 在自定义 headers
-  **之后**用 `header()` 覆盖式写 `x-opencode-session`，且 `host=="opencode.ai"` 时
-  硬塞 conversationId UUID（非法格式）→ 必 403；UA 自定义可生效。
 - 绕过尝试全部失败（均有实测）：`www/api/app` 等子域假 200、尾点域名证书不匹配、
   大小写重复 session 头/逗号拼接 403。
 - 确认本执行环境为 rkkahub per-command proot，`--kill-on-exit` 杀后台进程
@@ -30,9 +27,7 @@
 - **`zen_check.py`**：9 个一次性探测脚本（probe/ablation/static/ua/host/alias/
   sim_rikka/dup/relay_test）合并为单文件多子命令（basic/ablate/host/relay），
   修复 four_tools 括号不匹配的 SyntaxError。
-- **`rikkahub-fix-session.patch`**：由改好的 `Request.kt` 经 `git diff` 生成——
-  用户已设同名头则不覆盖，否则 UUID 格式化为 `ses_` + 26 位（已过服务端正则验证）。
-- **`README.md`**：校验条件表、relay 配置、失败绕过记录、补丁 fork + Actions 出包步骤；
+- **`README.md`**：校验条件表、relay 配置、失败绕过记录；
   relay 启动说明改为「用户在自己常驻环境启动」。
 
 ## 2026-09-23
@@ -64,3 +59,23 @@
 ## 2026-09-22 基线后
 - `73d88fb` git 仓库初始化，基线提交（6 文件，`*.log` 入 .gitignore）。
 - 本 CHANGELOG 补写。
+
+## 2026-10-15 复检：旧路线失效，改用真客户端当传输层
+
+### 结论
+- Zen 免费额度的客户端校验已升级为**内容级**：把官方客户端真实请求逐字节重放
+  （头/体/头顺序，乃至 TLS ClientHello）仍全部 403；只有官方客户端进程本身 200。
+  → `zen_relay.py` / `zen_free.py` / `zen_check.py` 所依赖的静态指纹方案**已失效**。
+
+### 新增
+- **`oc_bridge.py`**：不模仿客户端，而是起一个真实 `opencode serve` 当传输层，
+  把其 HTTP API 翻译成 OpenAI 兼容端点（默认 `:8790`）。
+  rikkahub 只需把 Base URL 指到 `http://127.0.0.1:8790/v1`。
+  实测通过：`GET /v1/models`、非流式与流式的 `/v1/chat/completions` 均 200。
+- **`FINDINGS-2026-10-15.md`**：本次复检的完整记录（分层判定、逐字节重放、
+  TLS ClientHello 比对、官方客户端抓包、可行方案验证）。
+- `_probe/` 入 `.gitignore`（复检脚本与 opencode 二进制，不入库）。
+
+### 文档
+- `README.md` / `README.en.md` 重写：以 `oc_bridge.py` 为推荐方案，
+  `zen_relay.py` 等旧工具标注为已失效并保留留档。

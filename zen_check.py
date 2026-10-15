@@ -106,7 +106,7 @@ def check_ablate():
     cases = [
         ("基线: UA+ses_+stream+tools", hdrs(),                              chat_body()),
         ("无 x-opencode-session",      hdrs(ses=None),                      chat_body()),
-        ("session=UUID(rikkahub格式)", hdrs(ses=UUID_SES),                  chat_body()),
+        ("session=UUID 格式", hdrs(ses=UUID_SES),                  chat_body()),
         ("有 Authorization",           hdrs(auth="Bearer public"),          chat_body()),
         ("UA=python",                  hdrs(ua="python-urllib/3.12"),       chat_body()),
         ("UA=opencode/1.17",           hdrs(ua="opencode/1.17.0"),          chat_body()),
@@ -116,7 +116,7 @@ def check_ablate():
         ("tools只有3个(缺grep)",       hdrs(),                              {**chat_body(), "tools": four_tools()[:3]}),
         ("带 extra 三头",              hdrs(extra=True),                    chat_body()),
     ]
-    expect403 = {"无 x-opencode-session", "session=UUID(rikkahub格式)",
+    expect403 = {"无 x-opencode-session", "session=UUID 格式",
                  "UA=python", "stream=false", "无 tools", "tools只有3个(缺grep)"}
     for tag, h, b in cases:
         st, raw = post(BASE + "/chat/completions", b, h)
@@ -130,7 +130,7 @@ def check_ablate():
 
 def check_host():
     print("== 子域/别名探测（找 host != opencode.ai 仍能用的入口）==")
-    print("   用途: rikkahub 只对 host==opencode.ai 硬塞 UUID session")
+    print("   用途: 找 host != opencode.ai 仍能用的入口")
     for sub in ("", "zen.", "api.", "www.", "app.", "cdn.", "go.", "v1."):
         host = sub + "opencode.ai"
         try:
@@ -144,7 +144,7 @@ def check_host():
         real = is_ok(st, raw)
         note = "" if real else ("假200: " + raw[:40].replace("\n", " ") if st == 200 else raw[:40])
         line(real, host, st, note)
-    # 尾点域名（服务端认但证书不匹配 → 需跳过校验，rikkahub 无此开关）
+    # 尾点域名（服务端认但证书不匹配 → 需跳过校验）
     ctx = ssl.create_default_context()
     try:
         http.client.HTTPSConnection("opencode.ai.", 443, context=ctx, timeout=15)
@@ -157,7 +157,7 @@ def check_relay():
     body = chat_body(tools=False)   # 故意不带 tools，验证 relay 会补
     h = {"Content-Type": "application/json", "Accept": "text/event-stream",
          "Authorization": "Bearer ", "User-Agent": "OpenCode/1.18.13",
-         "X-Session-ID": UUID_SES, "x-opencode-session": UUID_SES}  # 模拟 rikkahub 脏头
+         "X-Session-ID": UUID_SES, "x-opencode-session": UUID_SES}  # 模拟客户端硬塞的 UUID 脏头
     st, raw = post(RELAY + "/chat/completions", body, h, timeout=90)
     ok = is_ok(st, raw)
     line(ok, "relay 聊天(脏头+无tools)", st)

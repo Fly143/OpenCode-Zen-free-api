@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 """OpenCode Zen 免费模型直连示例（绕过客户端校验），零依赖，python3 即可跑。
+
+!! 2026-10-15 起已失效：Zen 免费额度升级为内容级客户端校验，静态指纹被拒（403）。
+   新方案见 oc_bridge.py / FINDINGS-2026-10-15.md。
+
 用法: python3 zen_free.py [模型名] [提示词]
 """
 import json, sys, uuid, urllib.request

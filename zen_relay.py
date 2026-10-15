@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """zen_relay.py — 本地反代，给 OpenCode Zen 免费模型注入通过校验所需的头/体。
+
+!! 2026-10-15 起本方案已失效：Zen 免费额度已升级为内容级客户端校验，
+   逐字节重放官方客户端真实请求仍 403。新方案请用 oc_bridge.py，
+   详见 FINDINGS-2026-10-15.md。本文件保留留档；其中 SSE→JSON 聚合骨架
+   换任意 OpenAI 兼容上游仍可复用。
+
 用法:
   python3 zen_relay.py [端口]               默认 8787；session 每请求随机（原行为）
   python3 zen_relay.py [端口] --sticky      启动时随机生成一个 session，整个进程复用
   python3 zen_relay.py [端口] --rotate=600  隐含 --sticky，每 600 秒自动换新 session
   ZEN_SESSION_MODE=sticky python3 zen_relay.py   同上（环境变量写法）
   调试: curl http://127.0.0.1:8787/__session     查看当前 session 状态
-rikkahub 里 Base URL 填: http://127.0.0.1:8787/zen/v1
-原理: rikkahub 只对 host==opencode.ai 硬塞 UUID session；指向 127.0.0.1 即绕开，
-      本中转统一补上 UA / ses_ session / tools / stream=true，并透传 SSE。
+客户端 Base URL 填: http://127.0.0.1:8787/zen/v1
+原理: 本中转统一补上 UA / ses_ session / tools / stream=true，并透传 SSE。
 """
 import json, os, sys, time, uuid, threading, http.server, socketserver, urllib.request, urllib.error
 
