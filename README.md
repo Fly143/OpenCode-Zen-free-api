@@ -86,7 +86,22 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 | `GET /v1/models` | ✅ 200 |
 | `POST /v1/chat/completions`（非流式） | ✅ 200，正常出字 |
 | `POST /v1/chat/completions`（`stream:true`） | ✅ 标准 SSE 分片 + `[DONE]` |
-| `step-5-preview-free` 等其它免费模型 | ✅ 200 |
+| 其它免费模型（见下表） | ✅ 200 |
+
+### 免费模型可用性（2026-10-20 逐个发消息实测）
+
+| 模型 | 状态 | 首字 |
+|---|---|---|
+| `minimax-m3.1-flash-free` | ✅ | 1.6s |
+| `deepseek-v4.1-flash-free` | ✅ | 2.4s |
+| `nemotron-3.5-lightning-free` | ✅ | 3.8s |
+| `nemotron-3.5-super-vl-free` | ✅ | 4.2s |
+| `longcat-2.5-preview-free` | ✅ | 6.1s |
+| `mimo-v2.6-flash-free` | ✅ | ~9s |
+| `glm-5.3-flash-free` | ✅ | 9.5s |
+| `beam-free` | ⚠️ HTTP 200 但常返回空文本 | — |
+| `step-5-preview-free` / `space-bunny-free` / `jev-1.13-free` | ❌ HTTP 500 | — |
+| `big-pickle` | ❌ 已从 `/v1/models` 下架 | — |
 
 ## 注意
 

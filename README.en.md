@@ -92,7 +92,22 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 | `GET /v1/models` | ✅ 200 |
 | `POST /v1/chat/completions` (non-stream) | ✅ 200, real completion |
 | `POST /v1/chat/completions` (`stream:true`) | ✅ proper SSE chunks + `[DONE]` |
-| Other free models, e.g. `step-5-preview-free` | ✅ 200 |
+| Other free models (see list below) | ✅ 200 |
+
+### Free model availability (probed individually, 2026-10-20)
+
+| Model | Status | First token |
+|---|---|---|
+| `minimax-m3.1-flash-free` | ✅ | 1.6s |
+| `deepseek-v4.1-flash-free` | ✅ | 2.4s |
+| `nemotron-3.5-lightning-free` | ✅ | 3.8s |
+| `nemotron-3.5-super-vl-free` | ✅ | 4.2s |
+| `longcat-2.5-preview-free` | ✅ | 6.1s |
+| `mimo-v2.6-flash-free` | ✅ | ~9s |
+| `glm-5.3-flash-free` | ✅ | 9.5s |
+| `beam-free` | ⚠️ HTTP 200 but usually empty text | — |
+| `step-5-preview-free` / `space-bunny-free` / `jev-1.13-free` | ❌ HTTP 500 | — |
+| `big-pickle` | ❌ gone from `/v1/models` | — |
 
 ## Caveats
 
