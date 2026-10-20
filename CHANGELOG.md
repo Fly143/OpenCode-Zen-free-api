@@ -144,3 +144,29 @@
 - 已失效：`step-5-preview-free`、`space-bunny-free`、`jev-1.13-free` → HTTP 500；
   `big-pickle` 已不在 `/v1/models`。
 - `DEFAULT_FREE` 已按上面顺序更新（`/v1/models` 输出随之更新）。
+
+## 2026-10-20（后续）：`/v1/models` 改为默认不过滤
+
+按用户要求去掉白名单过滤：`GET /v1/models` 直接把上游清单原样返回。
+
+- **主源**：Zen 的 `/zen/v1/models`（OpenAI 格式 `{"object":"list","data":[...]}`，
+  当前 **85** 个），带 `User-Agent: opencode/1.19.0` 即可 200，**原样透传不改造**。
+- **并集补充**：opencode serve `/config/providers` 里有、Zen 清单漏掉的也加进来
+  （只增不减）。实测 `nemotron-3-ultra-free` 能正常出字却不在 Zen 列表里，
+  并集后为 **86** 个。
+- 结果缓存 60 秒（`upstream_models()`）。
+- `POST /v1/chat/completions` 的 `model` **不再校验白名单**，原样透传给上游，
+  可用性由上游裁决（实测 `nemotron-3-ultra-free` → 200、`claude-sonnet-4-5` → 上游 500）。
+- `--free-models` 改为**可选**：不传（默认）= 不过滤；传了 = 回到旧白名单行为
+  （清单只返回这几个，其余 404）。
+- 顺带修正 10-15 的错误结论：`big-pickle` 并未下架，10-20 实测可正常出字（9.0s）。
+
+实测（`./start.sh` 无额外参数）：
+```
+[bridge] OpenAI 兼容端点: http://127.0.0.1:8793/v1  (不过滤（上游全量 85 个模型）)
+GET /v1/models → 86 个（并集后）
+POST /v1/chat/completions  nemotron-3-ultra-free → 200  5.0s  'Hi there friend'
+POST /v1/chat/completions  glm-5.3-flash-free     → 200  4.5s
+stream:true (minimax-m3.1-flash-free) → 3 分片 + [DONE]，'1, 2, 3, 4, 5.'
+--free-models glm-5.3-flash-free,mimo-v2.6-flash-free → 清单 2 个，其它 404 ✅
+```

@@ -32,11 +32,10 @@ import argparse, json, os, shutil, signal, subprocess, sys, threading, time
 import urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-# 2026-10-20 实测可用清单（Zen /v1/models 里 free 后缀的 9 个中，能出字的 8 个）：
-#   step-5-preview-free / space-bunny-free / jev-1.13-free 已下线或 500；beam-free 能连但常返回空文本
-DEFAULT_FREE = ["deepseek-v4.1-flash-free", "minimax-m3.1-flash-free", "nemotron-3.5-lightning-free",
-                "mimo-v2.6-flash-free", "glm-5.3-flash-free", "longcat-2.5-preview-free",
-                "nemotron-3.5-super-vl-free", "beam-free"]
+# 默认不做模型过滤：/v1/models 直接把 Zen 上游的全量清单原样返回，
+# chat 请求里的 model 也原样透传给上游（可用与否由上游裁决）。
+# 只有显式传 --free-models a,b,c 时才启用白名单（旧行为）。
+DEFAULT_FREE = []
 
 # 默认用这个自定义 agent 顶掉 opencode 注入的 ~9.5KB 系统提示（实测降到 ~1KB）。
 # 通过环境变量 OPENCODE_CONFIG_CONTENT 注入，与用户自己的 opencode.json 合并，不改动其文件。
@@ -48,6 +47,53 @@ OC_BASE = None
 _proc = None
 _sessions = {}          # conversation-key -> session id  (stateful 模式)
 _lock = threading.Lock()
+
+# 上游模型清单缓存（Zen 的 /v1/models 就是 OpenAI 格式，可原样透传）
+ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models"
+OC_UA = "opencode/1.19.0"
+_models_cache = {"ts": 0.0, "data": None}
+_models_lock = threading.Lock()
+
+
+def upstream_models():
+    """取上游全量模型清单（只增不减，不做任何过滤）。
+
+    1) Zen 直连 /zen/v1/models —— 当前 85 个，OpenAI 格式可原样透传；
+    2) 补上 opencode serve `/config/providers` 里有、但 Zen 清单缺的
+       （实测 `nemotron-3-ultra-free` 就属于这种：能调通却不在 Zen 列表里）。
+    两路都失败才返回空列表。
+    """
+    with _models_lock:
+        if _models_cache["data"] and time.time() - _models_cache["ts"] < 60:
+            return _models_cache["data"]
+        data, seen = [], set()
+
+        def add(m):
+            mid = m.get("id") if isinstance(m, dict) else m
+            if mid and mid not in seen:
+                seen.add(mid)
+                data.append(m if isinstance(m, dict) else
+                            {"id": mid, "object": "model", "created": int(time.time()),
+                             "owned_by": "opencode"})
+
+        try:                                  # 1) Zen 直连：已确认只要 opencode UA 就 200
+            req = urllib.request.Request(ZEN_MODELS_URL, headers={
+                "User-Agent": OC_UA, "Authorization": "Bearer public"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                for m in (json.loads(r.read().decode()) or {}).get("data") or []:
+                    add(m)
+        except Exception:
+            pass
+        try:                                  # 2) 补 opencode serve 认得的（含 Zen 清单外的）
+            d = oc("GET", "/config/providers", timeout=20)
+            for prov in d.get("providers", []):
+                for mid in (prov.get("models") or {}):
+                    add(mid)
+        except Exception:
+            pass
+        if data:
+            _models_cache.update(ts=time.time(), data=data)
+        return data
 
 
 # ---------- opencode server helpers ----------
@@ -201,9 +247,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.rstrip("/").endswith("/models"):
-            now = int(time.time())
-            self._json(200, {"object": "list", "data": [
-                {"id": m, "object": "model", "created": now, "owned_by": "opencode"} for m in ARGS.free_models]})
+            if ARGS.free_models:            # 显式传了 --free-models 才过滤
+                now = int(time.time())
+                data = [{"id": m, "object": "model", "created": now, "owned_by": "opencode"}
+                        for m in ARGS.free_models]
+            else:                           # 默认：上游给什么就返回什么
+                data = upstream_models()
+            self._json(200, {"object": "list", "data": data})
         elif "health" in self.path:
             self._json(200, {"ok": True})
         else:
@@ -222,7 +272,7 @@ class Handler(BaseHTTPRequestHandler):
         model = model.split("/")[-1]
         if model.endswith("(high)") or "(" in model:
             model = model.split("(")[0].strip()
-        if model not in ARGS.free_models:
+        if ARGS.free_models and model not in ARGS.free_models:
             return self._json(404, {"error": {"message": f"model {model!r} not in allowlist",
                                               "type": "ModelError"}})
         system_text, prompt = split_messages(req.get("messages"))
@@ -268,7 +318,9 @@ def main():
     ap.add_argument("--oc-port", type=int, default=4097)
     ap.add_argument("--opencode-bin", default=None)
     ap.add_argument("--home", default=None, help="opencode 的 HOME（配置/凭据目录）")
-    ap.add_argument("--free-models", default=",".join(DEFAULT_FREE))
+    ap.add_argument("--free-models", default=None,
+                    help="可选：逗号分隔的白名单。不传（默认）= 不过滤，/v1/models 原样返回上游全量清单，"
+                         "chat 的 model 直接透传；传了则只允许这些模型（旧行为）")
     ap.add_argument("--mode", choices=["stateless", "stateful"], default="stateless")
     ap.add_argument("--agent", default=DEFAULT_AGENT,
                     help=f"要使用的 opencode agent 名（默认 {DEFAULT_AGENT}：桥自动注入的精简 agent，"
@@ -278,14 +330,17 @@ def main():
     ap.add_argument("--full-prompt", action="store_true",
                     help="用 opencode 默认的完整系统提示（等价于 --agent build）")
     ARGS = ap.parse_args()
-    ARGS.free_models = [m.strip() for m in ARGS.free_models.split(",") if m.strip()]
+    ARGS.free_models = [m.strip() for m in (ARGS.free_models or "").split(",") if m.strip()]
     if ARGS.full_prompt:
         ARGS.agent = "build"
     signal.signal(signal.SIGTERM, flush_children)
     signal.signal(signal.SIGINT, flush_children)
     start_server()
-    print(f"[bridge] OpenAI 兼容端点: http://127.0.0.1:{ARGS.port}/v1  "
-          f"(models: {', '.join(ARGS.free_models[:4])}...)  mode={ARGS.mode}")
+    if ARGS.free_models:
+        desc = f"白名单 {len(ARGS.free_models)} 个: {', '.join(ARGS.free_models[:4])}..."
+    else:
+        desc = f"不过滤（上游全量 {len(upstream_models())} 个模型）"
+    print(f"[bridge] OpenAI 兼容端点: http://127.0.0.1:{ARGS.port}/v1  ({desc})  mode={ARGS.mode}")
     ThreadingHTTPServer(("127.0.0.1", ARGS.port), Handler).serve_forever()
 
 

@@ -71,7 +71,7 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 #   --opencode-bin PATH   指定 opencode 二进制路径（默认从 PATH 找）
 #   --home DIR            指定 opencode 的 HOME（配置/凭据目录）
 #   --mode stateless|stateful   默认 stateless（每请求新会话）；stateful 按会话复用
-#   --free-models a,b,c   覆盖允许的模型 id 列表
+#   --free-models a,b,c   可选白名单（不传=不过滤，模型清单原样返回上游）
 #   --prompt TEXT         精简系统提示文本（默认 "You are a helpful assistant."）
 #   --full-prompt         用 opencode 默认的完整系统提示
 #   --agent NAME          指定 opencode agent（默认 bridge，即自动注入的精简 agent）
@@ -79,16 +79,23 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 
 `oc_bridge.py` 会自己拉起（或复用已在跑的）`opencode serve`。
 
-## 已验证
+## 模型清单：默认不过滤
 
-| 测试 | 结果 |
-|---|---|
-| `GET /v1/models` | ✅ 200 |
-| `POST /v1/chat/completions`（非流式） | ✅ 200，正常出字 |
-| `POST /v1/chat/completions`（`stream:true`） | ✅ 标准 SSE 分片 + `[DONE]` |
-| 其它免费模型（见下表） | ✅ 200 |
+`GET /v1/models` **不做任何过滤**，直接把上游清单原样返回（当前 **86 个**）：
 
-### 免费模型可用性（2026-10-20 逐个发消息实测）
+- 主源是 Zen 的 `/zen/v1/models`（OpenAI 格式，`{"object":"list","data":[...]}`，85 个），
+  桥直接透传；
+- 再并上 opencode 客户端 `/config/providers` 里有、但 Zen 清单漏掉的（实测
+  `nemotron-3-ultra-free` 可正常调通却不在 Zen 列表里）——**只增不减**；
+- 结果缓存 60 秒。
+
+`POST /v1/chat/completions` 里的 `model` 也**原样透传**，能不能用由上游裁决
+（付费模型会返回上游自己的错误）。只有显式传 `--free-models a,b,c` 才回到旧的
+白名单行为（清单只剩这几个，白名单外的模型返回 404）。
+
+下面这张表**只是参考**（2026-10-20 逐个实测），不是白名单：
+
+### 免费模型可用性参考（2026-10-20 逐个发消息实测）
 
 | 模型 | 状态 | 首字 |
 |---|---|---|
@@ -99,9 +106,10 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 | `longcat-2.5-preview-free` | ✅ | 6.1s |
 | `mimo-v2.6-flash-free` | ✅ | ~9s |
 | `glm-5.3-flash-free` | ✅ | 9.5s |
+| `big-pickle` | ✅ | 9.0s（10-20 起恢复可用） |
+| `nemotron-3-ultra-free` | ✅ | 11.1s（只在客户端清单里有，Zen 列表漏掉；桥已补） |
 | `beam-free` | ⚠️ HTTP 200 但常返回空文本 | — |
 | `step-5-preview-free` / `space-bunny-free` / `jev-1.13-free` | ❌ HTTP 500 | — |
-| `big-pickle` | ❌ 已从 `/v1/models` 下架 | — |
 
 ## 注意
 

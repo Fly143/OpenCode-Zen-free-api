@@ -77,7 +77,7 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 #   --opencode-bin PATH   path to the opencode binary (default: found on PATH)
 #   --home DIR            HOME for opencode (config/credentials dir)
 #   --mode stateless|stateful   default stateless (new session per request)
-#   --free-models a,b,c   override the allowed model-id list
+#   --free-models a,b,c   optional allowlist (omit = no filtering, upstream list passed through)
 #   --prompt TEXT         minimal system prompt text (default "You are a helpful assistant.")
 #   --full-prompt         use opencode's default full system prompt
 #   --agent NAME          opencode agent to use (default bridge, the injected minimal one)
@@ -94,6 +94,22 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 | `POST /v1/chat/completions` (`stream:true`) | ✅ proper SSE chunks + `[DONE]` |
 | Other free models (see list below) | ✅ 200 |
 
+## Model list: no filtering by default
+
+`GET /v1/models` does **no filtering** — it returns the upstream list as-is
+(currently **86** models):
+
+- primary source is Zen's `/zen/v1/models` (OpenAI format, 85 models), passed through verbatim;
+- merged with models that `opencode serve`'s `/config/providers` knows but Zen's list
+  misses (e.g. `nemotron-3-ultra-free`, which works but isn't listed by Zen) — **union only**;
+- cached for 60s.
+
+The `model` field in `POST /v1/chat/completions` is passed through too; availability is
+decided upstream. Passing `--free-models a,b,c` explicitly restores the old allowlist
+behaviour (404 for anything else).
+
+The table below is **informational only** (individually probed 2026-10-20), not an allowlist:
+
 ### Free model availability (probed individually, 2026-10-20)
 
 | Model | Status | First token |
@@ -105,9 +121,10 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 | `longcat-2.5-preview-free` | ✅ | 6.1s |
 | `mimo-v2.6-flash-free` | ✅ | ~9s |
 | `glm-5.3-flash-free` | ✅ | 9.5s |
+| `big-pickle` | ✅ | 9.0s (working again as of 10-20) |
+| `nemotron-3-ultra-free` | ✅ | 11.1s (client list only; bridged in) |
 | `beam-free` | ⚠️ HTTP 200 but usually empty text | — |
 | `step-5-preview-free` / `space-bunny-free` / `jev-1.13-free` | ❌ HTTP 500 | — |
-| `big-pickle` | ❌ gone from `/v1/models` | — |
 
 ## Caveats
 
