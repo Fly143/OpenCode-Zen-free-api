@@ -32,9 +32,11 @@ import argparse, json, os, shutil, signal, subprocess, sys, threading, time
 import urllib.request, urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-DEFAULT_FREE = ["mimo-v2.6-flash-free", "step-5-preview-free", "deepseek-v4.1-flash-free",
-                "nemotron-3.5-lightning-free", "jev-1.13-free", "longcat-2.5-preview-free",
-                "space-bunny-free", "big-pickle"]
+# 2026-10-20 实测可用清单（Zen /v1/models 里 free 后缀的 9 个中，能出字的 8 个）：
+#   step-5-preview-free / space-bunny-free / jev-1.13-free 已下线或 500；beam-free 能连但常返回空文本
+DEFAULT_FREE = ["deepseek-v4.1-flash-free", "minimax-m3.1-flash-free", "nemotron-3.5-lightning-free",
+                "mimo-v2.6-flash-free", "glm-5.3-flash-free", "longcat-2.5-preview-free",
+                "nemotron-3.5-super-vl-free", "beam-free"]
 
 # 默认用这个自定义 agent 顶掉 opencode 注入的 ~9.5KB 系统提示（实测降到 ~1KB）。
 # 通过环境变量 OPENCODE_CONFIG_CONTENT 注入，与用户自己的 opencode.json 合并，不改动其文件。

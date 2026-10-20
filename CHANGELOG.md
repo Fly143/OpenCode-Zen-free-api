@@ -109,3 +109,38 @@
   注入 `bridge` agent（与用户已有 `opencode.json` 合并，不改其文件），默认
   `agent=bridge`，把注入的系统提示从 9565 → ~1080 字符。新增 `--prompt TEXT`
   自定义提示文本、`--full-prompt` 恢复完整提示。实测默认打真实上游正常出字。
+
+## 2026-10-20 复检：方案仍有效；opencode 二进制缺失已修复，免费清单更新
+
+### 现状核实（同一出口，无任何伪装）
+- `GET https://opencode.ai/zen/v1/models`（带 opencode UA）→ **200，85 个模型**，
+  免费档 9 个。**Zen 仍然只认真客户端**，旧结论（静态模仿一律 403）未变。
+- `oc_bridge.py` 全链路复测通过：
+  `POST /v1/chat/completions` → 200，`mimo-v2.6-flash-free` 8.9s 正常出字。
+- 首次冷启动首字较慢（14–20s，含实例 bootstrap），之后 1–9s。
+
+### 修复：opencode 二进制丢失（本机 rootfs 侧，非方案问题）
+- 现象：`/opt/.../opencode-ai/bin/opencode.exe` 与
+  `.../node_modules/opencode-linux-arm64/bin/opencode` 都是**悬空软链**
+  （指向不存在的 `.l2s.opencode0001`），`npm i -g opencode-ai@1.19.0` 重装后
+  postinstall 仍只生成软链 → `FileNotFoundError`。
+- 处理：直接下平台包 tarball 手工解包（60MB tgz → 185MB 二进制）
+  ```sh
+  npm pack opencode-linux-arm64@1.19.0
+  D=/opt/node-v22.14.0-linux-arm64/lib/node_modules/opencode-ai/node_modules/opencode-linux-arm64
+  rm -rf "$D/bin" && tar xzf opencode-linux-arm64-1.19.0.tgz --strip-components=1 -C "$D"
+  chmod 755 "$D/bin/opencode"
+  rm -f .../opencode-ai/bin/opencode.exe && ln -s ../node_modules/opencode-linux-arm64/bin/opencode .../opencode-ai/bin/opencode.exe
+  ln -sf .../opencode-ai/bin/opencode.exe /usr/local/bin/opencode
+  ```
+  → `opencode --version` = 1.19.0，`start.sh` 可用。
+
+### 免费模型清单（2026-10-20 实测，逐个发消息验证）
+- 可用：`deepseek-v4.1-flash-free`(2.4s)、`minimax-m3.1-flash-free`(1.6s)、
+  `nemotron-3.5-lightning-free`(3.8s)、`mimo-v2.6-flash-free`、
+  `glm-5.3-flash-free`(9.5s)、`longcat-2.5-preview-free`(6.1s)、
+  `nemotron-3.5-super-vl-free`(4.2s)。
+- 半残：`beam-free` 能连、HTTP 200，但 content 为空（疑似只出推理/空响应）。
+- 已失效：`step-5-preview-free`、`space-bunny-free`、`jev-1.13-free` → HTTP 500；
+  `big-pickle` 已不在 `/v1/models`。
+- `DEFAULT_FREE` 已按上面顺序更新（`/v1/models` 输出随之更新）。
