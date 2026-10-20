@@ -106,6 +106,16 @@ python3 oc_bridge.py --port 8790 --oc-port 4097
 ## 注意
 
 - 运行处需要 opencode 二进制（手机可用 Termux 装 node 后 `npm i -g opencode-ai`）。
+  **若 `opencode --version` 报 `Not found` 或桥启动报 `FileNotFoundError`**，
+  多半是 npm 的 postinstall 只造了软链而平台包没落地（`bin/opencode` 指向不存在的
+  `.l2s.opencode0001`）。手动补：
+  ```sh
+  npm pack opencode-linux-arm64@1.19.0
+  D=$(npm root -g)/opencode-ai/node_modules/opencode-linux-arm64
+  rm -rf "$D/bin" && tar xzf opencode-linux-arm64-*.tgz --strip-components=1 -C "$D"
+  chmod 755 "$D/bin/opencode"
+  ln -sf "$D/bin/opencode" /usr/local/bin/opencode
+  ```
 - 请求仍会带上 opencode 的工具定义（约 23KB）——这是**固有开销**，闸门与客户端行为
   都依赖它，配置去不掉。
 - 免费额度按**地区**切分：香港出口下 `cat-jam-free`、`muse-spark-1.2/1.3` 返回
